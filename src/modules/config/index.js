@@ -11,7 +11,8 @@ async function salvar(path, ocultar){
   ocultar ? nova.add(path) : nova.delete(path);
   const {error} = await sb.from('config_site').upsert({chave:'ocultos', valor:[...nova], atualizado_em:new Date().toISOString()});
   if (error){
-    toast(/config_site|relation|does not exist/i.test(error.message || '') ? 'Rode o 09_ocultar.sql no SQL Editor do Supabase para usar este recurso.' : errMsg(error), 'err');
+    console.error(error);
+    toast(/schema cache|does not exist/i.test(error.message || '') ? 'Tabela config_site não encontrada: rode o 09_ocultar.sql e depois "notify pgrst, \'reload schema\';" no SQL Editor. (' + error.message + ')' : errMsg(error), 'err');
     return false;
   }
   setOcultos([...nova]); ctx.refreshNav();
