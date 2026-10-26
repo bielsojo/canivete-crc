@@ -11,7 +11,8 @@ const load = {
   laudos:       () => import('./laudos/index.js'),
   formularios:  () => import('./formularios/index.js'),
   licencas:     () => import('./licencas/index.js'),
-  usuarios:     () => import('./usuarios/index.js')
+  usuarios:     () => import('./usuarios/index.js'),
+  config:       () => import('./config/index.js')
 };
 
 export const NAV = [
@@ -27,7 +28,8 @@ export const NAV = [
   {path:'licencas/reciclar', mod:'licencas', sub:'reciclar', title:'Reciclagem', icon:'rec', group:'Licenças Office', bloco:'licencas'},
   {path:'licencas/qualidade', mod:'licencas', sub:'qualidade', title:'Qualidade dos dados', icon:'shield', group:'Licenças Office', bloco:'licencas'},
   {path:'licencas/historico', mod:'licencas', sub:'historico', title:'Histórico', icon:'clock', group:'Licenças Office', bloco:'licencas'},
-  {path:'usuarios', mod:'usuarios', title:'Usuários', icon:'users', group:'Administração', admin:true}
+  {path:'usuarios', mod:'usuarios', title:'Usuários', icon:'users', group:'Administração', admin:true},
+  {path:'config', mod:'config', title:'Configurações', icon:'tool', group:'Administração', admin:true}
 ];
 
 // Blocos liberáveis, na ordem do menu: [{id, nome, ferramentas:[títulos]}]
@@ -39,9 +41,15 @@ export const BLOCOS = NAV.reduce((acc, n) => {
   return acc;
 }, []);
 
+// Itens ocultados pelo administrador (valem para todos). Início e telas de administração nunca se ocultam.
+export const OCULTOS = new Set();
+export const ocultavel = n => !n.admin && n.path !== 'inicio';
+export const setOcultos = l => { OCULTOS.clear(); (l || []).forEach(p => OCULTOS.add(p)); };
+
 // O usuário pode abrir este item do menu?
 export function podeVer(me, n){
   if (!me) return false;
+  if (n.path && OCULTOS.has(n.path) && ocultavel(n)) return false;
   if (me.perfil === 'admin') return true;
   if (n.admin) return false;
   return !n.bloco || (me.acessos || []).includes(n.bloco);

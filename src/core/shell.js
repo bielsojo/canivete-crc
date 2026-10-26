@@ -3,7 +3,7 @@
 import { sb, CONFIGURADO } from './supabase.js';
 import { $, $$, ic, esc, norm, toast, busy, errMsg, closeModal } from './ui.js';
 import { isDark, toggleTheme } from './theme.js';
-import { NAV, BLOCOS, getModule, podeVer } from '../modules/registry.js';
+import { NAV, BLOCOS, getModule, podeVer, setOcultos } from '../modules/registry.js';
 
 export const PERFIL = {admin:'Administrador', operador:'Operador', consulta:'Consulta', logistica:'Logística'};
 const APP = {me:null, nav:null, modId:null, mod:null, searchers:new Map(), badges:{}, seq:0};
@@ -19,6 +19,7 @@ export const ctx = {
   setTopbar(html){ const e = $('#topx'); if (e) e.innerHTML = html || ''; },
   setBadge(path, n){ APP.badges[path] = n; renderNav(); },
   registerSearch(id, fn){ APP.searchers.set(id, fn); },
+  refreshNav(){ renderNav(); },
   setMe(patch){ Object.assign(APP.me, patch); renderShell(); route(true); }
 };
 
@@ -81,6 +82,8 @@ async function enter(){
   if (error || !p || !p.ativo){ await sb.auth.signOut(); APP.me = null; renderLogin('Seu usuário ainda não tem acesso. Peça ao administrador.'); return; }
   if (p.trocar_senha){ renderForcePw(p.nome || u.email, u.email); return; }
   APP.me = {id:p.id, nome:p.nome || u.email, email:u.email, perfil:p.perfil, acessos:p.acessos || []};
+  // itens ocultados globalmente; sem a tabela (09_ocultar.sql) nada fica oculto
+  try { const {data:c} = await sb.from('config_site').select('valor').eq('chave', 'ocultos').maybeSingle(); setOcultos(c && c.valor); } catch(e){ setOcultos([]); }
   renderShell();
   route(true);
 }
