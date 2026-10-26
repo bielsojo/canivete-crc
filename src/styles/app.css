@@ -216,6 +216,7 @@ tr.q-bad>td{background:var(--bad-soft)} tr.q-warn>td{background:var(--warn-soft)
 .slot{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow-sm)}
 .slot.free{border-style:dashed;border-color:var(--line-2);background:transparent;box-shadow:none}
 .slot.res{background:var(--res-soft);border-color:transparent}
+.slot.q-bad{background:var(--bad-soft);border-color:var(--bad)} .slot.q-warn{background:var(--warn-soft);border-color:var(--warn)}
 .slot-h{display:flex;align-items:center;gap:10px}
 .slot-n{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:700;font-size:12.5px;background:var(--accent-soft);color:var(--accent);flex:none}
 .slot.free .slot-n{background:var(--ok-soft);color:var(--ok)}

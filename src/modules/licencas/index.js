@@ -70,8 +70,8 @@ function computeDerived(){
   };
   S.qn = S.q.dup.length + S.q.noClient.length + S.q.estoque.length;
   // Gravidade por conta, com as mesmas cores das abas de Qualidade: vermelho (duplicado/estoque) e amarelo (demais).
-  S.accounts.forEach(a => a.qs = '');
-  const mark = (s, lv) => { if (lv === 'bad' || !s.a.qs) s.a.qs = lv; };
+  S.accounts.forEach(a => { a.qs = ''; a.slots.forEach(s => s.qs = ''); });
+  const mark = (s, lv) => { if (lv === 'bad' || !s.qs) s.qs = lv; if (lv === 'bad' || !s.a.qs) s.a.qs = lv; };
   S.q.dup.forEach(([, v]) => v.forEach(s => mark(s, 'bad')));
   S.q.estoque.forEach(s => mark(s, 'bad'));
   ['noClient','noHost','noSerial','noDate'].forEach(k => S.q[k].forEach(s => mark(s, 'warn')));
@@ -397,7 +397,7 @@ function slotCard(s, edit){
     ${adm ? `<div class="slot-a"><button class="btn sm" onclick="LIC.tirarReserva(${s.id})">${ic('unlock','sm')} Tirar reserva</button></div>` : ''}</div>`;
   if (s.st === 'disponivel') return `<div class="slot free"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow"><div class="strong">Vaga livre</div><div class="small muted">Pronta para uma nova ativação</div></div>
     ${adm ? resBtn : ''}${edit ? `<button class="btn sm primary" onclick="LIC.slotForm(${s.id})">${ic('plus','sm')} Ativar</button>` : ''}</div></div>`;
-  return `<div class="slot"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(s.cli)}</div><div class="small muted mono trunc">${esc(s.host) || 'sem hostname'}</div></div><span class="badge b-acc dotb">Em uso</span></div>
+  return `<div class="slot ${s.qs ? 'q-' + s.qs : ''}"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(s.cli)}</div><div class="small muted mono trunc">${esc(s.host) || 'sem hostname'}</div></div><span class="badge b-acc dotb">Em uso</span></div>
     <div class="kv"><span>Serial</span><span class="mono">${esc(s.serial) || '<span class="muted">—</span>'}</span><span>Ativada em</span><span>${dateTag(s)}${s.data ? ` <span class="muted small">· ${ageTxt(ageDays(s.data))}</span>` : ''}</span>
       ${s.prop ? `<span>Proposta</span><span>${esc(s.prop)}</span>` : ''}${s.obs ? `<span>Observação</span><span>${esc(s.obs)}</span>` : ''}</div>
     ${edit ? `<div class="slot-a"><button class="btn sm" onclick="LIC.slotForm(${s.id})">${ic('edit','sm')} Editar</button><button class="btn sm" style="color:var(--bad)" onclick="LIC.confirmRelease(${s.id})">${ic('unlock','sm')} Liberar vaga</button>${adm ? resBtn : ''}</div>` : ''}</div>`;
