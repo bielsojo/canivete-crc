@@ -1,14 +1,14 @@
 # Canivete CRC
 
-Todas as ferramentas do CRC num só site, com um login só (Supabase):
+Todas as ferramentas do CRC num só site (substitui os projetos antigos BACKLOG, Construtor_Formularios e controle-licencas), com um login só (Supabase):
 
-| Ferramenta | Origem | Dados |
-|---|---|---|
-| Backlog de chamados | `BACKLOG/index.html` (aba 1) | CSV do GLPI, guardado só no navegador (IndexedDB) |
-| Equipamentos | `BACKLOG/index.html` (aba 2) | base única no Supabase (todos leem, só admin publica; SQL em `Controle de licenças/supabase/07_equipamentos.sql`) |
-| Gerador de laudos | `BACKLOG/index.html` (aba 3, v1.7) | estado do laudo e PDFs, só no navegador |
-| Formulários | `Construtor_Formularios/` | localStorage do navegador |
-| Licenças Office + Usuários | `Controle de licenças/publicar-github/` | Supabase (RLS + RPCs + Vault) |
+| Ferramenta | Dados |
+|---|---|
+| Backlog de chamados | CSV do GLPI, guardado só no navegador (IndexedDB) |
+| Equipamentos | base única no Supabase (todos leem, só admin publica; SQL em `Controle de licenças/supabase/07_equipamentos.sql`) |
+| Gerador de laudos | estado do laudo e PDFs, só no navegador |
+| Formulários | localStorage do navegador |
+| Licenças Office + Usuários | Supabase (RLS + RPCs + Vault) |
 
 ## Rodar localmente
 
