@@ -111,10 +111,13 @@ function draw(){
     return;
   }
   const b = E.base, quando = b.atualizado_em ? `${new Date(b.atualizado_em).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'})} (${relTime(b.atualizado_em)})` : '';
-  el.innerHTML = pageHead('Equipamentos', `${nf(E.raw.length)} ${E.raw.length === 1 ? 'equipamento' : 'equipamentos'} · base <b>${esc(b.arquivo)}</b>, atualizada em ${quando}${b.atualizado_por_nome ? ` por ${esc(b.atualizado_por_nome)}` : ''}`,
+  // quem não é admin vê só quando a base foi atualizada (sem arquivo, total nem autor)
+  el.innerHTML = pageHead('Equipamentos', isAdmin()
+      ? `${nf(E.raw.length)} ${E.raw.length === 1 ? 'equipamento' : 'equipamentos'} · base <b>${esc(b.arquivo)}</b>, atualizada em ${quando}${b.atualizado_por_nome ? ` por ${esc(b.atualizado_por_nome)}` : ''}`
+      : (quando ? `Atualizada em ${quando}` : ''),
     (isAdmin() ? `<button class="btn primary" id="eup" title="Substitui a base para todos os usuários">${ic('up','sm')} Atualizar base</button>` : '') +
     `<button class="btn" id="eexp">${ic('dl','sm')} Exportar XLSX</button>`) + `
-    ${isAdmin() ? '' : `<div class="small muted" style="margin:-8px 0 14px;display:flex;gap:6px;align-items:center">${ic('lock','sm')} Base compartilhada: só administradores podem atualizá-la.</div>`}
+
     <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>
     <div class="toolbar">
       <div class="searchbox">${ic('search','sm')}<input class="input" type="search" id="eq" placeholder="Modelo, cliente, serial, localidade… (vários termos)" value="${esc(E.q)}"></div>
