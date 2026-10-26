@@ -71,7 +71,13 @@ async function fetchBase(){
   if (error) throw error;
   return data && data.lote ? data : null;
 }
-async function loadShared(force){
+// Uma carga por vez: a página inicial e a tela de equipamentos pedem ao mesmo tempo
+let carregando = null;
+function loadShared(force){
+  if (!carregando) carregando = doLoadShared(force).finally(() => { carregando = null; });
+  return carregando;
+}
+async function doLoadShared(force){
   const base = await fetchBase();
   if (!base){ E.raw = []; E.loaded = false; E.base = null; E.checked = Date.now(); return; }
   if (!force && E.loaded && E.base && E.base.lote === base.lote){ E.base = base; E.checked = Date.now(); return; }
