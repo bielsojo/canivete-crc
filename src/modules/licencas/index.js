@@ -69,6 +69,12 @@ function computeDerived(){
     estoque: act.filter(s => (s.eq = retornou(s)))
   };
   S.qn = S.q.dup.length + S.q.noClient.length + S.q.estoque.length;
+  // Gravidade por conta, com as mesmas cores das abas de Qualidade: vermelho (duplicado/estoque) e amarelo (demais).
+  S.accounts.forEach(a => a.qs = '');
+  const mark = (s, lv) => { if (lv === 'bad' || !s.a.qs) s.a.qs = lv; };
+  S.q.dup.forEach(([, v]) => v.forEach(s => mark(s, 'bad')));
+  S.q.estoque.forEach(s => mark(s, 'bad'));
+  ['noClient','noHost','noSerial','noDate'].forEach(k => S.q[k].forEach(s => mark(s, 'warn')));
   let u = 0, f = 0, r = 0, t = 0;
   S.accounts.forEach(a => { u += a.c.u; f += a.c.f; r += a.c.r; t += a.c.t; });
   S.tot = {u, f, r, t};
@@ -193,7 +199,7 @@ function vContasBody(){
   if (!L.length){ $('#cbody').innerHTML = `<div class="tbl-wrap">${emptyBox('search','Nenhuma conta encontrada','Tente outro termo ou filtro.')}</div>`; return; }
   if (CV.mode === 'grade'){
     $('#cbody').innerHTML = `<div class="acc-grid">${L.map(a => { const c = clis(a); return `
-      <button class="acc" onclick="LIC.openAccount(${a.id})">
+      <button class="acc ${a.qs ? 'q-' + a.qs : ''}" ${a.qs ? 'title="Dados com problema: veja Qualidade dos dados"' : ''} onclick="LIC.openAccount(${a.id})">
         <div class="acc-top"><div style="min-width:0"><div class="acc-n mono trunc">${esc(user(a.email))}</div><div class="acc-d">${esc(domain(a.email))}</div></div><span class="small strong" style="font-variant-numeric:tabular-nums">${a.c.u}/${a.c.t}</span></div>
         ${cellsHtml(a, true)}
         <div class="acc-cli trunc">${c.length ? esc(c.slice(0,3).join(' · ')) + (c.length > 3 ? ` <span class="muted">+${c.length-3}</span>` : '') : '<span class="muted">Sem máquinas ativas</span>'}</div>
@@ -202,7 +208,7 @@ function vContasBody(){
   } else {
     $('#cbody').innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Conta</th><th>Uso</th><th class="hide-sm">Clientes</th><th>Situação</th><th class="hide-sm">Última ativação</th></tr></thead><tbody>
     ${L.map(a => { const c = clis(a), last = a.slots.filter(s => s.data && s.st==='ativo').map(s => s.data).sort().pop(); return `
-      <tr class="click" onclick="LIC.openAccount(${a.id})"><td class="mono">${esc(a.email)}</td><td class="nowrap">${cellsHtml(a)} <span class="small muted">${a.c.u}/${a.c.t}</span></td>
+      <tr class="click ${a.qs ? 'q-' + a.qs : ''}" onclick="LIC.openAccount(${a.id})"><td class="mono">${esc(a.email)}</td><td class="nowrap">${cellsHtml(a)} <span class="small muted">${a.c.u}/${a.c.t}</span></td>
       <td class="small hide-sm">${esc(c.slice(0,2).join(', '))}${c.length>2?` <span class="muted">+${c.length-2}</span>`:''}</td><td class="nowrap">${statusBadges(a.c)}</td><td class="hide-sm">${fmt(last)}</td></tr>`; }).join('')}
     </tbody></table></div><div class="pager"><span>${plural(L.length,'conta')} de ${S.accounts.length}</span></div></div>`;
   }
