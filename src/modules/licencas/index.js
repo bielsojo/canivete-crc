@@ -403,7 +403,7 @@ function slotCard(s, edit){
   return `<div class="slot ${s.qs ? 'q-' + s.qs : ''}"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(s.cli)}</div><div class="small muted mono trunc">${esc(s.host) || 'sem hostname'}</div></div><span class="badge b-acc dotb">Em uso</span></div>
     <div class="kv"><span>Serial</span><span class="mono">${esc(s.serial) || '<span class="muted">—</span>'}</span><span>Ativada em</span><span>${dateTag(s)}${s.data ? ` <span class="muted small">· ${ageTxt(ageDays(s.data))}</span>` : ''}</span>
       ${s.prop ? `<span>Proposta</span><span>${esc(s.prop)}</span>` : ''}${s.obs ? `<span>Observação</span><span>${esc(s.obs)}</span>` : ''}</div>
-    ${edit ? `<div class="slot-a"><button class="btn sm" onclick="LIC.slotForm(${s.id})">${ic('edit','sm')} Editar</button><button class="btn sm" style="color:var(--bad)" onclick="LIC.confirmRelease(${s.id})">${ic('unlock','sm')} Liberar vaga</button>${adm ? resBtn : ''}</div>` : ''}</div>`;
+    ${edit ? `<div class="slot-a"><button class="btn sm" onclick="LIC.slotForm(${s.id})">${ic('edit','sm')} Editar</button>${adm ? `<button class="btn sm" style="color:var(--bad)" onclick="LIC.confirmRelease(${s.id})">${ic('unlock','sm')} Liberar vaga</button>${resBtn}` : ''}</div>` : ''}</div>`;
 }
 
 /* =====================================================================
@@ -493,6 +493,7 @@ async function saveSlot(id){
   } catch(e){ er(errMsg(e)); }
 }
 async function confirmRelease(id){
+  if (!isAdmin()) return;
   const s = S.slotById[id];
   const btn = await confirmBox({title:`Liberar a vaga ${s.n}?`, tone:'bad', icon:'unlock', ok:'Liberar vaga',
     text:`A máquina <b>${esc(s.cli)}</b> (<span class="mono">${esc(s.host || 'sem hostname')}</span>) sai da conta <span class="mono">${esc(s.a.email)}</span> e a vaga fica livre.<div class="alert warn" style="margin-top:12px">${ic('alert')}<span>Lembre de desativar o Office nessa máquina.</span></div>`});
@@ -600,7 +601,12 @@ function makePlan(){
   }
   const plan = picks.map(s => ({type:'livre', id:s.id, host:'', serial:''}));
   const need = qtd - plan.length;
-  if (need > 0){
+  NA.falta = 0;
+  if (need > 0 && !isAdmin()){
+    // reciclar é liberar vaga de outra máquina: só o administrador
+    if (!plan.length) return toast('Não há vagas livres. Peça a um administrador para liberar vagas.', 'err');
+    NA.falta = need;
+  } else if (need > 0){
     S.active.slice().sort((x,y) => (x.data ? 0 : 1) - (y.data ? 0 : 1) || (x.data||'').localeCompare(y.data||''))
       .slice(0, need).forEach(s => plan.push({type:'reciclar', id:s.id, host:'', serial:''}));
   }
@@ -615,7 +621,8 @@ function drawPlan(){
   $('#plan').innerHTML = `<div class="card" style="max-width:860px;margin-top:16px">
     <div class="card-h"><h3>${esc(NA.cli)} · ${plural(P2.length,'máquina')}</h3><span class="sub">${existing ? `já tem ${plural(existing,'máquina ativa','máquinas ativas')}` : 'cliente novo'}</span></div>
     <div class="card-b">
-      ${rec ? `<div class="alert warn" style="margin-bottom:6px">${ic('alert')}<div>Só ${plural(P2.length-rec,'vaga livre','vagas livres')}. <b>${plural(rec,'ativação antiga','ativações antigas')}</b> abaixo ${rec>1?'serão recicladas':'será reciclada'}: a máquina atual perde a licença e a vaga passa para ${esc(NA.cli)}. Confira antes de confirmar.</div></div>`
+      ${NA.falta ? `<div class="alert warn" style="margin-bottom:6px">${ic('alert')}<div>Só ${plural(P2.length,'vaga livre','vagas livres')}: faltam <b>${NA.falta}</b>. Só o administrador pode liberar vagas. Ative estas agora e peça a um administrador para liberar as demais.</div></div>` : ''}
+      ${NA.falta ? '' : rec ? `<div class="alert warn" style="margin-bottom:6px">${ic('alert')}<div>Só ${plural(P2.length-rec,'vaga livre','vagas livres')}. <b>${plural(rec,'ativação antiga','ativações antigas')}</b> abaixo ${rec>1?'serão recicladas':'será reciclada'}: a máquina atual perde a licença e a vaga passa para ${esc(NA.cli)}. Confira antes de confirmar.</div></div>`
             : `<div class="alert ok" style="margin-bottom:6px">${ic('check')}<span>Há vagas livres suficientes. Nenhuma reciclagem necessária.</span></div>`}
       ${P2.map((p,i) => { const s = S.slotById[p.id]; return `<div class="plan-row">
         <div style="min-width:0"><div class="mono strong trunc">${esc(s.a.email)} <span class="muted" style="font-weight:400">· vaga ${s.n}</span></div>
@@ -715,7 +722,7 @@ function recList(){
 }
 function rPage(p){ RV.page = p; vRecBody(); }
 function vRecBody(){
-  const L = recList(), pg = L.slice(RV.page*PAGE, (RV.page+1)*PAGE), ed = canEdit();
+  const L = recList(), pg = L.slice(RV.page*PAGE, (RV.page+1)*PAGE), ed = isAdmin();
   const allOn = pg.length && pg.every(s => SEL.has(s.id));
   $('#rbody').innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
     <th style="width:40px">${ed ? `<input type="checkbox" title="Selecionar página" ${allOn?'checked':''} onchange="LIC.selPage(this.checked)">` : ''}</th><th>Cliente</th><th>Hostname</th><th class="hide-sm">Conta</th><th>Ativada em</th><th>Idade</th></tr></thead><tbody>
@@ -735,6 +742,7 @@ function drawSelbar(){
     <button class="btn sm ghost" onclick="LIC.SEL.clear();LIC.vRecBody()">Limpar</button><button class="btn sm danger" onclick="LIC.confirmBulk()">${ic('unlock','sm')} Liberar ${SEL.size}</button></div>` : '';
 }
 async function confirmBulk(){
+  if (!isAdmin()) return;
   const ids = [...SEL];
   const sample = ids.slice(0, 6).map(id => S.slotById[id]);
   const btn = await confirmBox({title:`Liberar ${plural(ids.length,'vaga','vagas')}?`, tone:'bad', icon:'unlock', ok:`Liberar ${ids.length}`,
