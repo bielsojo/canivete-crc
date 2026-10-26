@@ -129,6 +129,14 @@ export async function equipResumo(){
   if (!E.loaded || Date.now() - (E.checked || 0) > 60000) await loadShared().catch(() => {});
   return E.loaded ? {total:E.raw.length, base:E.base} : null;
 }
+// Para o módulo de licenças: serial (maiúsculas) → linhas da base. null se não há base publicada.
+export async function equipPorSerial(){
+  if (!E.loaded || Date.now() - (E.checked || 0) > 60000) await loadShared();
+  if (!E.loaded) return null;
+  const m = new Map();
+  for (const r of E.raw){ const s = String(r.Serial ?? '').trim().toUpperCase(); if (s) (m.get(s) || m.set(s, []).get(s)).push(r); }
+  return m;
+}
 
 function draw(){
   const el = E.el; if (!el) return;

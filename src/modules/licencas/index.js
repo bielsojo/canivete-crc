@@ -23,11 +23,17 @@ const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
 /* =====================================================================
    DADOS
    ===================================================================== */
+// Base de equipamentos (módulo Equipamentos): sem acesso ou sem base, a aba "Retornou ao estoque" avisa.
+const loadEquip = () => import('../equipamentos/index.js').then(m => m.equipPorSerial())
+  .then(m => { S.equipErr = m ? '' : 'Nenhuma base de equipamentos publicada.'; return m; })
+  .catch(e => { console.error('Equipamentos:', e); S.equipErr = 'Não foi possível ler a base de equipamentos: ' + errMsg(e); return null; });
 async function loadData(){
-  const [contas, vagas] = await Promise.all([
+  const [contas, vagas, equip] = await Promise.all([
     fetchAll((a,b) => sb.from('contas').select('id,email').order('id').range(a,b)),
-    fetchAll((a,b) => sb.from('vagas').select('id,conta_id,n,status,hostname,serial,data_ativacao,proposta,obs,atualizado_em,clientes(nome)').order('id').range(a,b))
+    fetchAll((a,b) => sb.from('vagas').select('id,conta_id,n,status,hostname,serial,data_ativacao,proposta,obs,atualizado_em,clientes(nome)').order('id').range(a,b)),
+    loadEquip()
   ]);
+  S.equip = equip;
   const by = {}, sl = {};
   contas.forEach(c => by[c.id] = {id:c.id, email:c.email, slots:[]});
   vagas.forEach(v => {
@@ -59,12 +65,22 @@ function computeDerived(){
     noHost: act.filter(s => !s.host),
     noSerial: act.filter(s => !s.serial),
     noDate: act.filter(s => !s.data),
-    noClient: act.filter(s => /N[ÃA]O ENCONTRADO|VERIFICAR|DESCONHECIDO/i.test(s.cli))
+    noClient: act.filter(s => /N[ÃA]O ENCONTRADO|VERIFICAR|DESCONHECIDO/i.test(s.cli)),
+    estoque: act.filter(s => (s.eq = retornou(s)))
   };
-  S.qn = S.q.dup.length + S.q.noClient.length;
+  S.qn = S.q.dup.length + S.q.noClient.length + S.q.estoque.length;
   let u = 0, f = 0, r = 0, t = 0;
   S.accounts.forEach(a => { u += a.c.u; f += a.c.f; r += a.c.r; t += a.c.t; });
   S.tot = {u, f, r, t};
+}
+/* Máquina licenciada que voltou ao estoque: o serial está na base de equipamentos, mas o status
+   não é "EM OPERACAO NO CLIENTE" e/ou a localidade é o armazém. A licença pode ser liberada.
+   Se o serial aparece mais de uma vez na base, basta uma linha em operação fora do armazém. */
+const txt = v => norm(v).trim().replace(/\s+/g, ' ');
+const emOperacao = r => txt(r.Status) === 'em operacao no cliente' && txt(r.Localidade) !== 'multilog brasil armazem geral';
+function retornou(s){
+  const rows = S.equip && s.serial ? S.equip.get(s.serial.trim().toUpperCase()) : null;
+  return rows && !rows.some(emOperacao) ? rows[0] : null;
 }
 async function reload(quiet){
   try {
@@ -125,7 +141,7 @@ function vPainel(){
       ${old.map(s => `<div class="mini-row" onclick="LIC.openAccount(${s.a.id})"><div class="mr-m"><div class="mr-t trunc">${esc(s.cli)}</div><div class="mr-s trunc"><span class="mono">${esc(s.host||'sem hostname')}</span> · ${slotRef(s)}</div></div><div class="right"><div class="small strong">${fmt(s.data)}</div><div class="mr-s">${ageTxt(ageDays(s.data))}</div></div></div>`).join('') || emptyBox('clock','Sem ativações com data')}
     </div></div></div>
     <div class="card"><div class="card-h"><h3>Atenção nos dados</h3><a class="small" href="#/licencas/qualidade">Detalhes</a></div><div class="card-b">
-      ${[['dup','Seriais duplicados','b-bad'],['noDate','Máquinas sem data','b-warn'],['noClient','Cliente não identificado','b-warn'],['noHost','Máquinas sem hostname','b-warn'],['noSerial','Máquinas sem serial','b-warn']]
+      ${[['dup','Seriais duplicados','b-bad'],['estoque','Retornou ao estoque','b-bad'],['noDate','Máquinas sem data','b-warn'],['noClient','Cliente não identificado','b-warn'],['noHost','Máquinas sem hostname','b-warn'],['noSerial','Máquinas sem serial','b-warn']]
         .map(([k,l,c]) => `<div class="check-row" onclick="LIC.QV.tab='${k}';LIC.go('qualidade')"><span>${l}</span><span class="badge ${q[k].length ? c : 'b-ok'}">${q[k].length ? q[k].length : ic('check')}</span></div>`).join('')}
     </div></div>
   </div>
@@ -687,9 +703,9 @@ async function confirmBulk(){
 const QV = {tab:'dup', page:0};
 function vQualidade(){
   const q = S.q;
-  const tabs = [['dup','Seriais duplicados',q.dup.length],['noClient','Cliente não identificado',q.noClient.length],['noHost','Sem hostname',q.noHost.length],['noSerial','Sem serial',q.noSerial.length],['noDate','Sem data',q.noDate.length]];
+  const tabs = [['dup','Seriais duplicados',q.dup.length],['estoque','Retornou ao estoque',q.estoque.length],['noClient','Cliente não identificado',q.noClient.length],['noHost','Sem hostname',q.noHost.length],['noSerial','Sem serial',q.noSerial.length],['noDate','Sem data',q.noDate.length]];
   $('#view').innerHTML = pageHead('Qualidade dos dados', 'Itens que merecem revisão. Corrigir aqui deixa a reciclagem mais confiável.') + `
-  <div class="tabs">${tabs.map(([k,l,n]) => `<button class="tab ${QV.tab===k?'on':''}" onclick="LIC.QV.tab='${k}';LIC.QV.page=0;LIC.vQualidade()">${l}<span class="badge ${n ? (k==='dup'?'b-bad':'b-warn') : 'b-ok'}">${n}</span></button>`).join('')}</div>
+  <div class="tabs">${tabs.map(([k,l,n]) => `<button class="tab ${QV.tab===k?'on':''}" onclick="LIC.QV.tab='${k}';LIC.QV.page=0;LIC.vQualidade()">${l}<span class="badge ${n ? (k==='dup'||k==='estoque'?'b-bad':'b-warn') : 'b-ok'}">${n}</span></button>`).join('')}</div>
   <div id="qbody"></div>`;
   vQualBody();
 }
@@ -710,6 +726,14 @@ function vQualBody(){
     ${q.dup.map(([k,v]) => `<tr><td class="mono strong">${esc(k)}</td><td><div class="mini">${v.map(s => `<div class="mini-row" onclick="LIC.openAccount(${s.a.id})"><div class="mr-m"><div class="mr-t">${esc(s.cli)}</div><div class="mr-s"><span class="mono">${esc(s.host||'sem hostname')}</span> · ${slotRef(s)} · ${fmt(s.data)}</div></div></div>`).join('')}</div></td></tr>`).join('')
       || `<tr><td colspan="2">${emptyBox('check','Nenhum serial duplicado')}</td></tr>`}
     </tbody></table></div></div>`;
+  } else if (QV.tab === 'estoque'){
+    const pg = q.estoque.slice(QV.page*PAGE, (QV.page+1)*PAGE);
+    html = `<div class="alert ${S.equipErr ? 'warn' : 'info'}" style="margin-bottom:14px">${ic('alert')}<span>${S.equipErr ? esc(S.equipErr)
+      : 'Máquinas com licença ativa cujo serial, na base de equipamentos, não está <b>EM OPERACAO NO CLIENTE</b> e/ou está no <b>MULTILOG BRASIL ARMAZEM GERAL</b>. O equipamento já voltou ao estoque: libere a vaga.'}</span></div>
+    <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Cliente</th><th>Hostname</th><th>Serial</th><th>Status do equipamento</th><th class="hide-sm">Localidade</th><th>Conta</th></tr></thead><tbody>
+    ${pg.map(s => `<tr class="click" onclick="LIC.openAccount(${s.a.id})"><td class="strong">${esc(s.cli)}</td><td class="mono">${esc(s.host)||'<span class="muted">—</span>'}</td><td class="mono">${esc(s.serial)}</td><td><span class="badge b-warn">${esc(s.eq.Status||'sem status')}</span></td><td class="small hide-sm">${esc(s.eq.Localidade||'—')}</td><td class="mono small nowrap">${slotRef(s)}</td></tr>`).join('')
+      || `<tr><td colspan="6">${emptyBox('check','Tudo certo','Nenhuma máquina licenciada voltou ao estoque.')}</td></tr>`}
+    </tbody></table></div>${q.estoque.length ? pager(q.estoque.length, QV.page, PAGE, 'qPage') : ''}</div>`;
   } else html = rowsBasic(q[QV.tab]);
   $('#qbody').innerHTML = html;
 }
