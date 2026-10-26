@@ -65,9 +65,9 @@ function pwField(id, val=''){
     <button type="button" class="btn" onclick="USR.$('#${id}').value=USR.genPw()">${ic('refresh','sm')} Gerar</button></div>`;
 }
 function accessText(email, senha){ return `Acesso ao Canivete CRC\nSite: ${location.origin + location.pathname}\nE-mail: ${email}\nSenha: ${senha}`; }
-function showAccess(title, email, senha){
+function showAccess(title, email, senha, troca=true){
   const m = modal({title, icon:'check', body:`<div class="form">
-    <div class="alert ok">${ic('check')}<span>Envie estes dados para a pessoa por um canal seguro. No primeiro acesso ela será obrigada a criar a própria senha.</span></div>
+    <div class="alert ok">${ic('check')}<span>Envie estes dados para a pessoa por um canal seguro.${troca ? ' No próximo acesso ela será obrigada a criar a própria senha.' : ''}</span></div>
     <div class="card" style="overflow:hidden">
       <div class="cred"><span class="k">E-mail</span><span class="v mono trunc">${esc(email)}</span></div>
       <div class="cred"><span class="k">Senha</span><span class="v mono trunc">${esc(senha)}</span></div>
@@ -119,13 +119,23 @@ function resetUserPw(id){
   const m = modal({title:'Redefinir senha', sub:u.email || u.nome, icon:'key', body:`
     <div class="form">
       <div class="field"><label>Nova senha</label>${pwField('rup', genPw())}</div>
+      ${id === ctx.me.id ? '' : `<label class="check-row" style="padding-top:0"><span>Exigir que a pessoa crie uma nova senha no próximo acesso<br><span class="small muted">Recomendado: assim só ela conhece a senha final.</span></span><input type="checkbox" id="rutr" checked></label>`}
       <div class="alert err hidden" id="ruerr"></div>
     </div>`, foot:`<button class="btn" onclick="USR.closeModal()">Cancelar</button><button class="btn primary" id="ruok">Salvar senha</button>`});
   $('#ruok', m).onclick = e => busy(e.currentTarget, async () => {
     const er = t => { const x = $('#ruerr'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
     const senha = $('#rup').value;
     if (senha.length < 8) return er('A senha precisa ter pelo menos 8 caracteres.');
-    try { await callUsuarios({acao:'senha', id, senha}); toast('Senha redefinida'); showAccess('Senha redefinida', u.email || u.nome, senha); }
+    const troca = id !== ctx.me.id && $('#rutr').checked;
+    try {
+      await callUsuarios({acao:'senha', id, senha});
+      if (!troca && id !== ctx.me.id){
+        // a Edge Function sempre marca a troca; aqui o admin escolheu dispensar
+        const {error} = await sb.rpc('admin_dispensar_troca', {p_id:id});
+        if (error) toast('Senha redefinida, mas a troca continua obrigatória: ' + errMsg(error), 'err');
+      }
+      toast('Senha redefinida'); vUsuarios(); showAccess('Senha redefinida', u.email || u.nome, senha, troca);
+    }
     catch(err){ er(err.message); }
   });
 }
