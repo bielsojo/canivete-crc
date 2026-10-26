@@ -33,7 +33,10 @@ function normalizeRows(data){
     return o;
   });
 }
+const collator = new Intl.Collator('pt-BR', {sensitivity:'base'});
 function setRows(rows, base){
+  // texto de busca pré-calculado: filtrar 50 mil linhas a cada tecla fica instantâneo
+  for (const r of rows) Object.defineProperty(r, '_k', {value:SEARCH.map(f => String(r[f] ?? '')).join('').toLowerCase(), enumerable:false, configurable:true});
   E.raw = rows; E.loaded = true; E.base = base; E.page = 1;
   E.status = {}; [...new Set(E.raw.map(r => String(r.Status || '').trim()))].filter(Boolean).sort().forEach(s => E.status[s] = true);
 }
@@ -41,7 +44,28 @@ function setRows(rows, base){
 /* ---------- base compartilhada no Supabase ----------
    equip_base guarda qual lote é o oficial; equip_itens guarda as linhas (jsonb).
    O IndexedDB só serve de cache: se o lote não mudou, não baixa tudo de novo. */
-const CHUNK = 2000;
+const PACK = 10000;   // equipamentos por pacote (uma linha de equip_itens)
+/* Pacote: só as colunas usadas, e cada coluna com dicionário de valores (Cliente, Modelo, Status…
+   se repetem muito). 50 mil equipamentos viram 5 linhas e uma única requisição. */
+function pack(rows){
+  const dict = COLS.map(() => []), idx = COLS.map(() => new Map());
+  const out = rows.map(row => COLS.map((c, j) => {
+    const v = row[c] ?? '';
+    let i = idx[j].get(v);
+    if (i === undefined){ i = dict[j].length; dict[j].push(v); idx[j].set(v, i); }
+    return i;
+  }));
+  return {v:2, cols:COLS, dict, rows:out};
+}
+function unpack(items){
+  const rows = [];
+  for (const d of items){
+    if (d && d.v === 2){
+      for (const a of d.rows){ const o = {}; d.cols.forEach((c, j) => { const v = d.dict[j][a[j]]; if (v !== '') o[c] = v; }); rows.push(o); }
+    } else rows.push(d);   // base antiga: um equipamento por linha
+  }
+  return rows;
+}
 async function fetchBase(){
   const {data, error} = await sb.from('equip_base').select('lote,arquivo,total,atualizado_em,atualizado_por_nome').eq('id', 1).maybeSingle();
   if (error) throw error;
@@ -56,7 +80,7 @@ async function loadShared(force){
     if (!force && c && c.filename === base.lote && c.data && c.data.length){ setRows(c.data, base); E.checked = Date.now(); return; }
   } catch(e){ console.error('IndexedDB equipamentos:', e); }
   const rows = await fetchAll((a, b) => sb.from('equip_itens').select('dados').eq('lote', base.lote).order('id').range(a, b));
-  setRows(rows.map(r => r.dados), base);
+  setRows(unpack(rows.map(r => r.dados)), base);
   E.checked = Date.now();
   dbStore.save('equipamentos', base.lote, base.atualizado_em, E.raw).catch(e => console.error('IndexedDB equipamentos:', e));
 }
@@ -81,9 +105,9 @@ function loadFile(file){
 async function publish(rows, filename){
   const lote = crypto.randomUUID();
   try {
-    for (let i = 0; i < rows.length; i += CHUNK){
-      progress(true, 'Publicando a base de equipamentos', `Enviando ${nf(Math.min(i + CHUNK, rows.length))} de ${nf(rows.length)}…`, Math.round(i / rows.length * 90));
-      await rpc('equip_carregar', {p_lote:lote, p_linhas:rows.slice(i, i + CHUNK)});
+    for (let i = 0; i < rows.length; i += PACK){
+      progress(true, 'Publicando a base de equipamentos', `Enviando ${nf(Math.min(i + PACK, rows.length))} de ${nf(rows.length)}…`, Math.round(i / rows.length * 90));
+      await rpc('equip_carregar', {p_lote:lote, p_linhas:[pack(rows.slice(i, i + PACK))]});
     }
     progress(true, 'Publicando a base de equipamentos', 'Trocando a base para todos…', 95);
     const n = await rpc('equip_publicar', {p_lote:lote, p_arquivo:filename});
@@ -137,7 +161,7 @@ function draw(){
     $('#efile').onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; };
   }
   $('#eexp').onclick = exportXlsx;
-  $('#eq').addEventListener('input', e => { E.q = e.target.value; E.page = 1; apply(); });
+  let qt; $('#eq').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { E.q = e.target.value; E.page = 1; apply(); }, 120); });
   $('#efunc').onchange = e => { E.func = e.target.checked; E.page = 1; apply(); };
   // menus suspensos
   [['#ebst', '#ddst'], ['#ebcol', '#ddcol']].forEach(([b, d]) => $(b).onclick = e => { e.stopPropagation(); const o = $(d).classList.contains('open'); $$('.dd', el).forEach(x => x.classList.remove('open')); $(d).classList.toggle('open', !o); });
@@ -176,18 +200,17 @@ function drawStatusLabel(){
 function apply(){
   const terms = E.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const all = Object.keys(E.status), sel = all.filter(s => E.status[s]);
+  const filtraSt = all.length && sel.length !== all.length, selSet = new Set(sel);
   E.filtered = E.raw.filter(row => {
     if (E.func && !norm(row.Cliente).includes('funcionario')) return false;
-    if (all.length && sel.length !== all.length && !sel.includes(String(row.Status || '').trim())) return false;
-    return terms.every(t => SEARCH.some(f => String(row[f] || '').toLowerCase().includes(t)));
+    if (filtraSt && !selSet.has(String(row.Status || '').trim())) return false;
+    return terms.every(t => row._k.includes(t));
   });
   const c = E.sortCol, dir = E.sortDir === 'asc' ? 1 : -1;
   const numeric = c === 'Numerador' || c === 'Idade do Equipamento';
-  E.filtered.sort((a, b) => {
-    const va = a[c] ?? '', vb = b[c] ?? '';
-    if (numeric) return ((parseFloat(String(va).replace(/[^\d.-]/g, '')) || 0) - (parseFloat(String(vb).replace(/[^\d.-]/g, '')) || 0)) * dir;
-    return String(va).toLowerCase().trim().localeCompare(String(vb).toLowerCase().trim()) * dir;
-  });
+  const num = v => parseFloat(String(v ?? '').replace(/[^\d.-]/g, '')) || 0;
+  E.filtered.sort(numeric ? (a, b) => (num(a[c]) - num(b[c])) * dir
+    : (a, b) => collator.compare(String(a[c] ?? '').trim(), String(b[c] ?? '').trim()) * dir);
   drawTable();
 }
 function drawTable(){
