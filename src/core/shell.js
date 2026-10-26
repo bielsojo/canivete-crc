@@ -5,7 +5,7 @@ import { $, $$, ic, esc, norm, toast, busy, errMsg, closeModal } from './ui.js';
 import { isDark, toggleTheme } from './theme.js';
 import { NAV, BLOCOS, getModule, podeVer } from '../modules/registry.js';
 
-export const PERFIL = {admin:'Administrador', operador:'Operador', consulta:'Consulta'};
+export const PERFIL = {admin:'Administrador', operador:'Operador', consulta:'Consulta', logistica:'Logística'};
 const APP = {me:null, nav:null, modId:null, mod:null, searchers:new Map(), badges:{}, seq:0};
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 

@@ -49,6 +49,7 @@ async function vUsuarios(){
     <p class="small muted" style="margin:0 0 10px">As <b>áreas</b> definem quais blocos do menu cada pessoa vê; o <b>perfil</b> define o que ela pode alterar dentro deles. Quando surgir um bloco novo no site, ele aparece aqui para você liberar.</p><div class="mini">
     <div class="mini-row" style="cursor:default"><span class="badge b-res">Administrador</span><span class="small">Tudo, em todas as áreas, inclusive criar e gerenciar usuários.</span></div>
     <div class="mini-row" style="cursor:default"><span class="badge b-acc">Operador</span><span class="small">Usa as áreas liberadas e altera licenças: ativar, editar, liberar, criar contas.</span></div>
+    <div class="mini-row" style="cursor:default"><span class="badge b-acc">Logística</span><span class="small">Como o operador, mas já nasce só com a área Licenças Office liberada.</span></div>
     <div class="mini-row" style="cursor:default"><span class="badge">Consulta</span><span class="small">Usa as áreas liberadas. Nas licenças, só visualiza contas, máquinas e senhas.</span></div>
   </div></div></div>`;
 }
@@ -100,7 +101,11 @@ function newUserForm(){
       toast('Usuário criado'); vUsuarios(); showAccess('Usuário criado', email, senha);
     } catch(err){ er(err.message); }
   });
-  $('#nuf', m).onchange = e => $('#nuar').classList.toggle('hidden', e.target.value === 'admin');
+  $('#nuf', m).onchange = e => {
+    $('#nuar').classList.toggle('hidden', e.target.value === 'admin');
+    // Logística nasce só com Licenças Office; o admin ainda pode ajustar antes de criar
+    if (e.target.value === 'logistica') m.querySelectorAll('[data-bloco]').forEach(i => { i.checked = i.dataset.bloco === 'licencas'; });
+  };
   setTimeout(() => $('#nun').focus(), 50);
 }
 function editAreas(id){
@@ -141,6 +146,10 @@ function resetUserPw(id){
 }
 async function setPerfil(id, perfil){
   const {error} = await sb.from('perfis').update({perfil}).eq('id', id);
+  if (!error && perfil === 'logistica'){
+    const r = await sb.rpc('definir_acessos', {p_id:id, p_acessos:['licencas']});
+    if (r.error) toast('Perfil atualizado, mas as áreas não: ' + errMsg(r.error), 'err');
+  }
   error ? toast(errMsg(error), 'err') : toast('Perfil atualizado'); vUsuarios();
 }
 async function setAtivo(id, ativo){
