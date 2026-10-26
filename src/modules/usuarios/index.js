@@ -1,13 +1,28 @@
-/* Usuários do canivete (perfis do Supabase). Todos veem a lista; só o administrador cria,
-   bloqueia, muda perfil ou redefine senha (a Edge Function "usuarios" confere de novo no servidor). */
+/* Usuários do canivete (perfis do Supabase). Tela só do administrador: cria, bloqueia, muda perfil,
+   libera áreas (blocos do menu) e redefine senha (a Edge Function "usuarios" confere de novo no servidor). */
 import { sb, callFn } from '../../core/supabase.js';
 import { $, ic, esc, relTime, errMsg, toast, copy, busy, modal, closeModal, confirmBox, pageHead } from '../../core/ui.js';
 import { PERFIL } from '../../core/shell.js';
+import { BLOCOS } from '../registry.js';
 
 let ctx = null;
 const USR = window.USR = {};
 const U = { users:[], mounted:false };
 const isAdmin = () => ctx.isAdmin();
+
+function areasCell(u){
+  if (u.perfil === 'admin') return '<span class="badge b-res" title="Administrador sempre vê tudo">todas</span>';
+  if (!u.acessos) return '<span class="muted small">—</span>';
+  const l = BLOCOS.filter(b => u.acessos.includes(b.id)).map(b => b.nome);
+  return l.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${l.map(n => `<span class="badge b-acc">${esc(n)}</span>`).join('')}</div>` : '<span class="badge b-warn">nenhuma</span>';
+}
+// Lista de blocos com caixa de seleção (usada no "Novo usuário" e em "Áreas")
+function areasPick(sel){
+  return `<div class="card"><div class="card-b" style="padding:10px 14px">${BLOCOS.map(b => `
+    <label class="check-row"><span><b>${esc(b.nome)}</b><br><span class="small muted">${esc(b.ferramentas.join(', '))}</span></span>
+      <input type="checkbox" data-bloco="${b.id}" ${sel.includes(b.id) ? 'checked' : ''}></label>`).join('')}</div></div>`;
+}
+const areasLidas = m => [...m.querySelectorAll('[data-bloco]:checked')].map(i => i.dataset.bloco);
 
 async function vUsuarios(){
   const adm = isAdmin();
@@ -17,22 +32,24 @@ async function vUsuarios(){
   const el = $('#ubody'); if (!el || !U.mounted) return;
   if (error){ el.innerHTML = `<div class="alert err">${ic('alert')}<span>${esc(errMsg(error))}</span></div>`; return; }
   U.users = data || [];
-  el.innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Acesso</th><th class="hide-sm">Último acesso</th>${adm ? '<th></th>' : ''}</tr></thead><tbody>
+  el.innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Áreas</th><th>Acesso</th><th class="hide-sm">Último acesso</th>${adm ? '<th></th>' : ''}</tr></thead><tbody>
   ${U.users.map(u => { const self = u.id === ctx.me.id; return `<tr>
     <td><div style="display:flex;gap:10px;align-items:center"><span class="avatar">${esc((u.nome[0]||'?').toUpperCase())}</span><div style="min-width:0"><div class="strong">${esc(u.nome)} ${self ? '<span class="badge b-acc">você</span>' : ''}</div><div class="sub">${u.email ? esc(u.email) : 'desde ' + new Date(u.criado_em).toLocaleDateString('pt-BR')}</div></div></div></td>
     <td>${adm && !self ? `<select class="input" style="width:auto;height:32px" onchange="USR.setPerfil('${u.id}',this.value)">${Object.entries(PERFIL).map(([k,l]) => `<option value="${k}" ${u.perfil===k?'selected':''}>${l}</option>`).join('')}</select>`
         : `<span class="badge ${u.perfil==='admin'?'b-res':u.perfil==='operador'?'b-acc':''}">${PERFIL[u.perfil]}</span>`}</td>
+    <td>${areasCell(u)}</td>
     <td class="nowrap">${!u.ativo ? '<span class="badge b-bad dotb">bloqueado</span>' : u.trocar_senha ? '<span class="badge b-warn dotb" title="Precisa criar a própria senha no próximo acesso">aguardando 1º acesso</span>' : '<span class="badge b-ok dotb">ativo</span>'}</td>
     <td class="hide-sm small">${u.ultimo_acesso ? relTime(u.ultimo_acesso) : '<span class="muted">nunca entrou</span>'}</td>
-    ${adm ? `<td class="right nowrap"><button class="btn sm" onclick="USR.renameUser('${u.id}')">${ic('edit','sm')} Nome</button>
+    ${adm ? `<td class="right nowrap">${u.perfil === 'admin' || !u.acessos ? '' : `<button class="btn sm" onclick="USR.editAreas('${u.id}')">${ic('shield','sm')} Áreas</button> `}<button class="btn sm" onclick="USR.renameUser('${u.id}')">${ic('edit','sm')} Nome</button>
       <button class="btn sm" onclick="USR.resetUserPw('${u.id}')">${ic('key','sm')} Senha</button>
       ${self ? '' : `<button class="btn sm" style="${u.ativo?'color:var(--bad)':''}" onclick="USR.setAtivo('${u.id}',${!u.ativo})">${u.ativo ? 'Bloquear' : 'Reativar'}</button>`}</td>` : ''}</tr>`; }).join('')}
   </tbody></table></div></div>
-  ${adm ? '' : '<div class="small muted" style="margin-top:10px">Só o administrador pode criar usuários, mudar perfis ou redefinir senhas.</div>'}
-  <div class="card" style="margin-top:16px;max-width:720px"><div class="card-h"><h3>O que cada perfil pode fazer</h3></div><div class="card-b"><div class="mini">
-    <div class="mini-row" style="cursor:default"><span class="badge b-res">Administrador</span><span class="small">Tudo, inclusive criar e gerenciar usuários.</span></div>
-    <div class="mini-row" style="cursor:default"><span class="badge b-acc">Operador</span><span class="small">Usa todas as ferramentas e altera licenças: ativar, editar, liberar, criar contas.</span></div>
-    <div class="mini-row" style="cursor:default"><span class="badge">Consulta</span><span class="small">Usa backlog, equipamentos, laudos e formulários. Nas licenças, só visualiza contas, máquinas e senhas.</span></div>
+  ${U.users.length && !U.users[0].acessos ? `<div class="alert warn" style="margin-top:12px">${ic('alert')}<span>Para liberar áreas por usuário, rode o <b>08_acessos.sql</b> no SQL Editor do Supabase. Até lá, todos continuam vendo tudo.</span></div>` : ''}
+  <div class="card" style="margin-top:16px;max-width:720px"><div class="card-h"><h3>O que cada perfil pode fazer</h3></div><div class="card-b">
+    <p class="small muted" style="margin:0 0 10px">As <b>áreas</b> definem quais blocos do menu cada pessoa vê; o <b>perfil</b> define o que ela pode alterar dentro deles. Quando surgir um bloco novo no site, ele aparece aqui para você liberar.</p><div class="mini">
+    <div class="mini-row" style="cursor:default"><span class="badge b-res">Administrador</span><span class="small">Tudo, em todas as áreas, inclusive criar e gerenciar usuários.</span></div>
+    <div class="mini-row" style="cursor:default"><span class="badge b-acc">Operador</span><span class="small">Usa as áreas liberadas e altera licenças: ativar, editar, liberar, criar contas.</span></div>
+    <div class="mini-row" style="cursor:default"><span class="badge">Consulta</span><span class="small">Usa as áreas liberadas. Nas licenças, só visualiza contas, máquinas e senhas.</span></div>
   </div></div></div>`;
 }
 // Edge Function "usuarios": roda no Supabase com a chave de serviço; daqui só vai o login de quem usa.
@@ -65,20 +82,37 @@ function newUserForm(){
       <div class="field"><label>E-mail</label><input class="input" type="email" id="nue" placeholder="maria@lowcost.com.br"></div>
       <div class="field"><label>Senha inicial</label>${pwField('nup', genPw())}<span class="help">Mínimo de 8 caracteres. "Gerar" cria uma senha forte.</span></div>
       <div class="field"><label>Perfil</label><select class="input" id="nuf">${Object.entries(PERFIL).map(([k,l]) => `<option value="${k}" ${k==='operador'?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="field" id="nuar"><label>Áreas liberadas</label>${areasPick([])}<span class="help">Administrador vê todas, independentemente desta escolha.</span></div>
       <div class="alert err hidden" id="nuerr"></div>
     </div>`, foot:`<button class="btn" onclick="USR.closeModal()">Cancelar</button><button class="btn primary" id="nuok">Criar usuário</button>`});
   $('#nuok', m).onclick = e => busy(e.currentTarget, async () => {
     const er = t => { const x = $('#nuerr'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
-    const nome = $('#nun').value.trim(), email = $('#nue').value.trim().toLowerCase(), senha = $('#nup').value, perfil = $('#nuf').value;
+    const nome = $('#nun').value.trim(), email = $('#nue').value.trim().toLowerCase(), senha = $('#nup').value, perfil = $('#nuf').value, areas = areasLidas(m);
     if (!nome) return er('Informe o nome.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return er('E-mail inválido.');
     if (senha.length < 8) return er('A senha precisa ter pelo menos 8 caracteres.');
     try {
-      await callUsuarios({acao:'criar', nome, email, senha, perfil});
+      const r = await callUsuarios({acao:'criar', nome, email, senha, perfil});
+      if (perfil !== 'admin' && r && r.id){
+        const {error} = await sb.rpc('definir_acessos', {p_id:r.id, p_acessos:areas});
+        if (error) toast('Usuário criado, mas as áreas não foram salvas: ' + errMsg(error), 'err');
+      }
       toast('Usuário criado'); vUsuarios(); showAccess('Usuário criado', email, senha);
     } catch(err){ er(err.message); }
   });
+  $('#nuf', m).onchange = e => $('#nuar').classList.toggle('hidden', e.target.value === 'admin');
   setTimeout(() => $('#nun').focus(), 50);
+}
+function editAreas(id){
+  const u = (U.users || []).find(x => x.id === id); if (!u) return;
+  const m = modal({title:'Áreas liberadas', sub:u.nome, icon:'shield', body:`<div class="form">${areasPick(u.acessos || [])}
+      <div class="small muted">A pessoa passa a ver só estes blocos no menu, na página inicial e na busca. O banco também bloqueia os dados das áreas não liberadas.</div></div>`,
+    foot:`<button class="btn" onclick="USR.closeModal()">Cancelar</button><button class="btn primary" id="arok">Salvar</button>`});
+  $('#arok', m).onclick = e => busy(e.currentTarget, async () => {
+    const {error} = await sb.rpc('definir_acessos', {p_id:id, p_acessos:areasLidas(m)});
+    if (error) return toast(errMsg(error), 'err');
+    closeModal(); toast('Áreas atualizadas'); vUsuarios();
+  });
 }
 function resetUserPw(id){
   const u = (U.users || []).find(x => x.id === id); if (!u) return;
@@ -118,7 +152,7 @@ function renameUser(id){
   setTimeout(() => { const i = $('#un'); i.focus(); i.select(); }, 50);
 }
 
-Object.assign(USR, {accessText, genPw, newUserForm, pwField, renameUser, resetUserPw, setAtivo, setPerfil, showAccess, vUsuarios, $, closeModal});
+Object.assign(USR, {accessText, editAreas, genPw, newUserForm, pwField, renameUser, resetUserPw, setAtivo, setPerfil, showAccess, vUsuarios, $, closeModal});
 
 export default {
   mount(el, c){ ctx = c; U.mounted = true; return vUsuarios(); },

@@ -3,7 +3,7 @@
 import { sb, CONFIGURADO } from './supabase.js';
 import { $, $$, ic, esc, norm, toast, busy, errMsg, closeModal } from './ui.js';
 import { isDark, toggleTheme } from './theme.js';
-import { NAV, getModule } from '../modules/registry.js';
+import { NAV, BLOCOS, getModule, podeVer } from '../modules/registry.js';
 
 export const PERFIL = {admin:'Administrador', operador:'Operador', consulta:'Consulta'};
 const APP = {me:null, nav:null, modId:null, mod:null, searchers:new Map(), badges:{}, seq:0};
@@ -14,6 +14,7 @@ export const ctx = {
   get me(){ return APP.me; },
   canEdit: () => !!APP.me && APP.me.perfil !== 'consulta',
   isAdmin: () => !!APP.me && APP.me.perfil === 'admin',
+  pode: bloco => podeVer(APP.me, {bloco}),
   go,
   setTopbar(html){ const e = $('#topx'); if (e) e.innerHTML = html || ''; },
   setBadge(path, n){ APP.badges[path] = n; renderNav(); },
@@ -71,10 +72,15 @@ async function doLogin(ev){
 async function enter(){
   $('#root').innerHTML = `<div class="boot"><div class="muted" style="display:flex;gap:10px;align-items:center"><span class="btn ghost busy" style="height:auto;padding:0"></span>Abrindo o canivete…</div></div>`;
   const {data:{user:u}} = await sb.auth.getUser();
-  const {data:p, error} = await sb.from('perfis').select('id,nome,perfil,ativo,trocar_senha').eq('id', u.id).maybeSingle();
+  let {data:p, error} = await sb.from('perfis').select('id,nome,perfil,ativo,trocar_senha,acessos').eq('id', u.id).maybeSingle();
+  if (error && /acessos/.test(error.message)){
+    // banco ainda sem o 08_acessos.sql: mantém o acesso de antes (todos os blocos)
+    ({data:p, error} = await sb.from('perfis').select('id,nome,perfil,ativo,trocar_senha').eq('id', u.id).maybeSingle());
+    if (p) p.acessos = BLOCOS.map(b => b.id);
+  }
   if (error || !p || !p.ativo){ await sb.auth.signOut(); APP.me = null; renderLogin('Seu usuário ainda não tem acesso. Peça ao administrador.'); return; }
   if (p.trocar_senha){ renderForcePw(p.nome || u.email, u.email); return; }
-  APP.me = {id:p.id, nome:p.nome || u.email, email:u.email, perfil:p.perfil};
+  APP.me = {id:p.id, nome:p.nome || u.email, email:u.email, perfil:p.perfil, acessos:p.acessos || []};
   renderShell();
   route(true);
 }
@@ -170,7 +176,7 @@ function paintTheme(){ const b = $('#themeBtn'); if (b) b.innerHTML = ic(isDark(
 function renderNav(){
   const n = $('#nav'); if (!n || !APP.me) return;
   let g = null, html = '';
-  NAV.forEach(it => {
+  NAV.filter(it => podeVer(APP.me, it)).forEach(it => {
     if (it.group !== g){ g = it.group; html += g ? `<div class="nav-group">${g}</div><div class="nav-sep"></div>` : ''; }
     const b = APP.badges[it.path];
     html += `<a class="nav ${APP.nav && APP.nav.path === it.path ? 'on' : ''}" href="#/${it.path}" title="${esc(it.title)}">${ic(it.icon)}<span>${it.title}</span>${b ? `<span class="badge b-warn">${b}</span>` : ''}</a>`;
@@ -180,7 +186,10 @@ function renderNav(){
 export function go(path){ if (location.hash !== '#/' + path) location.hash = '#/' + path; else route(true); }
 function findNav(){
   const h = location.hash.replace(/^#\/?/, '').split('?')[0];
-  return NAV.find(n => n.path === h) || NAV.find(n => h && n.path.startsWith(h + '/')) || NAV[0];
+  const n = NAV.find(n => n.path === h) || NAV.find(n => h && n.path.startsWith(h + '/')) || NAV[0];
+  if (podeVer(APP.me, n)) return n;
+  toast('Você não tem acesso a essa área. Peça ao administrador.', 'err');
+  return NAV[0];
 }
 async function route(force){
   if (!APP.me || !$('#view')) return;
@@ -253,7 +262,7 @@ function palSearch(v){
   const q = norm(v.trim());
   const items = [];
   if (q) APP.searchers.forEach(fn => { try { items.push(...fn(q)); } catch(e){ console.error(e); } });
-  const pages = NAV.filter(n => !q || norm(n.title + ' ' + n.group).includes(q))
+  const pages = NAV.filter(n => podeVer(APP.me, n) && (!q || norm(n.title + ' ' + n.group).includes(q)))
     .map(n => ({g:'Ir para', icon:n.icon, t:n.title, s:n.group, act:() => go(n.path)}));
   items.push(...pages.slice(0, q ? 5 : 14));
   PAL = {sel:0, items};
@@ -289,7 +298,7 @@ window.addEventListener('canivete:theme', paintTheme);
 
 // Só em desenvolvimento (npm run dev): abre o shell sem login para testar a interface.
 // Não existe no build publicado. As telas que dependem do Supabase mostram erro de permissão.
-if (import.meta.env.DEV) window.__caniveteDemo = (perfil = 'admin') => {
-  APP.me = {id:'demo', nome:'Demonstração', email:'demo@local', perfil};
+if (import.meta.env.DEV) window.__caniveteDemo = (perfil = 'admin', acessos = BLOCOS.map(b => b.id)) => {
+  APP.me = {id:'demo', nome:'Demonstração', email:'demo@local', perfil, acessos};
   renderShell(); route(true);
 };
