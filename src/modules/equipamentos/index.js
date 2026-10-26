@@ -137,6 +137,12 @@ export async function equipPorSerial(){
   for (const r of E.raw){ const s = String(r.Serial ?? '').trim().toUpperCase(); if (s) (m.get(s) || m.set(s, []).get(s)).push(r); }
   return m;
 }
+// Para o módulo de licenças: nomes de cliente distintos da base, em ordem alfabética. null se não há base publicada.
+export async function equipClientes(){
+  if (!E.loaded || Date.now() - (E.checked || 0) > 60000) await loadShared();
+  if (!E.loaded) return null;
+  return [...new Set(E.raw.map(r => String(r.Cliente ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
 
 function draw(){
   const el = E.el; if (!el) return;

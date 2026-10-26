@@ -298,3 +298,14 @@ tr.q-bad>td{background:var(--bad-soft)} tr.q-warn>td{background:var(--warn-soft)
   .searchbox{max-width:none;flex-basis:100%}
   .toolbar select.input{flex:1}
 }
+
+/* Seletor de cliente com busca */
+.cpick{position:relative}
+.cpick-b{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer}
+.cpick-b.bad{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.cpick-p{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--line-2);border-radius:10px;box-shadow:0 8px 24px -8px rgba(16,24,40,.28);padding:8px}
+.cpick-p.hidden{display:none}
+.cpick-l{max-height:260px;overflow:auto;margin-top:8px}
+.cpick-i{padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13.5px}
+.cpick-i.on,.cpick-i:hover{background:var(--accent-soft);color:var(--accent)}
+.cpick-m{padding:8px 10px;font-size:12.5px;color:var(--muted)}

@@ -24,9 +24,12 @@ const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
    DADOS
    ===================================================================== */
 // Base de equipamentos (módulo Equipamentos): sem acesso ou sem base, a aba "Retornou ao estoque" avisa.
-const loadEquip = () => import('../equipamentos/index.js').then(m => m.equipPorSerial())
-  .then(m => { S.equipErr = m ? '' : 'Nenhuma base de equipamentos publicada.'; return m; })
-  .catch(e => { console.error('Equipamentos:', e); S.equipErr = 'Não foi possível ler a base de equipamentos: ' + errMsg(e); return null; });
+const loadEquip = () => import('../equipamentos/index.js').then(async m => {
+  const [map, cls] = await Promise.all([m.equipPorSerial(), m.equipClientes()]);
+  S.eqClients = cls;
+  S.equipErr = map ? '' : 'Nenhuma base de equipamentos publicada.';
+  return map;
+}).catch(e => { console.error('Equipamentos:', e); S.eqClients = null; S.equipErr = 'Não foi possível ler a base de equipamentos: ' + errMsg(e); return null; });
 async function loadData(){
   const [contas, vagas, equip] = await Promise.all([
     fetchAll((a,b) => sb.from('contas').select('id,email').order('id').range(a,b)),
@@ -408,7 +411,48 @@ function slotCard(s, edit){
    ===================================================================== */
 
 /* ---------- ativar / editar / liberar vaga ---------- */
-function clientDatalist(){ return `<datalist id="cls">${S.clients.map(([n]) => `<option value="${esc(n)}">`).join('')}</datalist>`; }
+/* Seletor de cliente com busca. A lista vem da base de equipamentos; sem base, usa os clientes que já têm licença.
+   O valor escolhido fica num <input hidden id="${id}">, lido como um input comum. */
+const clientNames = () => S.eqClients && S.eqClients.length ? S.eqClients : S.clients.map(([n]) => n);
+const CP = {items:[], on:0};
+function clientPicker(id, value){
+  return `<div class="cpick" id="${id}-w"><input type="hidden" id="${id}" value="${esc(value)}">
+    <button type="button" class="input cpick-b" onclick="LIC.cpToggle('${id}')"><span class="trunc ${value ? '' : 'muted'}" id="${id}-t">${value ? esc(value) : 'Escolha o cliente'}</span><span class="muted" style="font-size:11px">▾</span></button>
+    <div class="cpick-p hidden" id="${id}-p"><input class="input cpick-s" id="${id}-s" placeholder="Pesquisar cliente…" autocomplete="off" oninput="LIC.cpRender('${id}')" onkeydown="LIC.cpKey(event,'${id}')"><div class="cpick-l" id="${id}-l"></div></div></div>`;
+}
+function cpToggle(id){
+  const p = $('#' + id + '-p'), open = p.classList.contains('hidden');
+  document.querySelectorAll('.cpick-p').forEach(x => x.classList.add('hidden'));
+  if (!open) return;
+  p.classList.remove('hidden');
+  const s = $('#' + id + '-s'); s.value = ''; cpRender(id); s.focus();
+}
+function cpRender(id){
+  const q = norm($('#' + id + '-s').value.trim()), all = clientNames();
+  const hit = all.filter(n => !q || norm(n).includes(q));
+  CP.items = hit.slice(0, 80); CP.on = 0;
+  $('#' + id + '-l').innerHTML = CP.items.map((n, i) => `<div class="cpick-i ${i ? '' : 'on'}" onmousedown="LIC.cpPick('${id}',${i})">${esc(n)}</div>`).join('')
+    + (hit.length > 80 ? `<div class="cpick-m">+${nf(hit.length - 80)} clientes: refine a busca</div>` : '')
+    + (hit.length ? '' : `<div class="cpick-m">Nenhum cliente encontrado na base de equipamentos</div>`);
+}
+function cpKey(e, id){
+  const n = CP.items.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault(); if (!n) return;
+    CP.on = (CP.on + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+    const rows = document.querySelectorAll('#' + id + '-l .cpick-i');
+    rows.forEach((r, i) => r.classList.toggle('on', i === CP.on)); rows[CP.on].scrollIntoView({block:'nearest'});
+  } else if (e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); if (n) cpPick(id, CP.on); }
+  else if (e.key === 'Escape'){ e.stopPropagation(); $('#' + id + '-p').classList.add('hidden'); }
+}
+function cpPick(id, i){
+  const v = CP.items[i]; if (v == null) return;
+  $('#' + id).value = v;
+  const t = $('#' + id + '-t'); t.textContent = v; t.classList.remove('muted');
+  $('#' + id + '-w .cpick-b').classList.remove('bad');
+  $('#' + id + '-p').classList.add('hidden');
+}
+document.addEventListener('mousedown', e => { if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick-p').forEach(x => x.classList.add('hidden')); });
 function serialOwner(serial, exceptId){
   if (!serial) return null;
   const u = serial.toUpperCase();
@@ -425,7 +469,7 @@ function slotForm(id){
   const s = S.slotById[id], edit = s.st === 'ativo';
   const m = modal({title: edit ? 'Editar máquina' : 'Ativar máquina', sub:`${s.a.email} · vaga ${s.n}`, icon: edit ? 'edit' : 'pc', body:`
     <div class="form">
-      <div class="field"><label>Cliente *</label><input class="input" id="fc" list="cls" value="${esc(s.cli)}" placeholder="Escolha ou digite o cliente" autocomplete="off">${clientDatalist()}</div>
+      <div class="field"><label>Cliente *</label>${clientPicker('fc', s.cli)}</div>
       <div class="two"><div class="field"><label>Hostname</label><input class="input mono" id="fh" value="${esc(s.host)}" placeholder="ex.: LC-NOTE-042"></div>
         <div class="field"><label>Serial</label><input class="input mono" id="fs" value="${esc(s.serial)}" oninput="LIC.checkSerial(this,${s.id},'#fsh')"><span class="help" id="fsh"></span></div></div>
       <div class="two"><div class="field"><label>Data da ativação</label><input class="input" type="date" id="fd" value="${s.data || todayIso()}" max="${todayIso()}"></div>
@@ -434,13 +478,13 @@ function slotForm(id){
       <div class="alert err hidden" id="fe"></div>
     </div>`, foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn primary" id="fok">${edit ? 'Salvar alterações' : 'Ativar máquina'}</button>`});
   $('#fok', m).onclick = e => busy(e.currentTarget, () => saveSlot(id));
-  setTimeout(() => $('#fc').focus(), 50);
+  setTimeout(() => $('#fc-w .cpick-b').focus(), 50);
 }
 async function saveSlot(id){
   const s = S.slotById[id], was = s.st === 'ativo';
   const er = t => { const x = $('#fe'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
   const cli = $('#fc').value.trim().toUpperCase(), serial = $('#fs').value.trim().toUpperCase();
-  if (!cli){ $('#fc').classList.add('bad'); return er('Informe o cliente.'); }
+  if (!cli){ $('#fc-w .cpick-b').classList.add('bad'); return er('Informe o cliente.'); }
   const dup = serialOwner(serial, s.id);
   if (dup) return er(`O serial ${serial} já está em uso na conta ${dup.a.email} (${dup.cli}).`);
   try {
@@ -530,7 +574,7 @@ function vAtivar(){
   <div class="steps"><span class="${NA.plan ? '' : 'on'}"><b>1</b>Pedido</span>${ic('arrow','sm')}<span class="${NA.plan ? 'on' : ''}"><b>2</b>Conferir e confirmar</span></div>
   <div class="card" style="max-width:860px"><div class="card-b" style="padding-top:18px">
     <div class="form"><div style="display:grid;grid-template-columns:minmax(0,2fr) 120px 170px;gap:14px" class="na-grid">
-      <div class="field"><label>Cliente *</label><input class="input" id="ac" list="cls" value="${esc(NA.cli)}" placeholder="Escolha ou digite o cliente" autocomplete="off" onkeydown="if(event.key==='Enter')LIC.makePlan()">${clientDatalist()}</div>
+      <div class="field"><label>Cliente *</label>${clientPicker('ac', NA.cli)}</div>
       <div class="field"><label>Máquinas</label><input class="input" type="number" id="aq" min="1" max="20" value="${NA.qtd}" onkeydown="if(event.key==='Enter')LIC.makePlan()"></div>
       <div class="field"><label>Data da ativação</label><input class="input" type="date" id="ad" value="${NA.data}" max="${todayIso()}"></div>
     </div>
@@ -544,7 +588,7 @@ function vAtivar(){
 function makePlan(){
   const cli = $('#ac').value.trim().toUpperCase(), qtd = Math.max(1, Math.min(20, parseInt($('#aq').value) || 1));
   NA.data = $('#ad').value || todayIso();
-  if (!cli){ const e = $('#ae'); e.classList.remove('hidden'); e.innerHTML = ic('alert') + '<span>Informe o cliente.</span>'; $('#ac').classList.add('bad'); return; }
+  if (!cli){ const e = $('#ae'); e.classList.remove('hidden'); e.innerHTML = ic('alert') + '<span>Informe o cliente.</span>'; $('#ac-w .cpick-b').classList.add('bad'); return; }
   NA.cli = cli; NA.qtd = qtd;
   const withFree = S.accounts.map(a => ({a, f:a.slots.filter(s => s.st === 'disponivel'), has:a.slots.some(s => s.st === 'ativo' && s.cli === cli)})).filter(x => x.f.length);
   let picks = [];
@@ -830,4 +874,4 @@ export default {
   }
 };
 
-Object.assign(LIC, {ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,clientDatalist,closeDrawer,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
