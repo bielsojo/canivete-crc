@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.local
+
+# Dados nunca vão para o repositório (o site é público)
+*.csv
+*.xlsx
+*.xls
+*.sql
+backlog*.csv
+controle-licencas.html
+
+# Sistema
+~$*
+.DS_Store
+Thumbs.db

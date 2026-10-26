@@ -1,0 +1,1185 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formulários · Canivete CRC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root {
+    --teal: #1a7f9c;
+    --teal-dark: #156b84;
+    --teal-active: #2d4a73;
+    --primary: #206bc4;
+    --frame-bg: #f5f7fb;
+    --border: #dce3ec;
+    --input-border: #dadfe5;
+    --text: #1d2738;
+    --muted: #667382;
+    --danger: #d63939;
+    --editor-bg: #e9edf3;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--editor-bg);
+  }
+  button { font: inherit; }
+
+  /* ---------- Editor: barra superior ---------- */
+  .editorbar {
+    height: 52px; background: #1d2738; color: #e6ebf2;
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  }
+  .editorbar .brand { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-right: 8px; white-space: nowrap; }
+  .editorbar input[type=text] {
+    background: #2a3546; border: 1px solid #3a4659; color: #fff; border-radius: 4px;
+    padding: 6px 10px; font: inherit; width: 240px;
+  }
+  .editorbar .spacer { flex: 1; }
+  .ebtn {
+    background: #2a3546; color: #e6ebf2; border: 1px solid #3a4659; border-radius: 4px;
+    padding: 6px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .ebtn:hover { background: #34425a; }
+  .ebtn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .ebtn.primary:hover { background: #1a569d; }
+  .seg { display: inline-flex; border: 1px solid #3a4659; border-radius: 4px; overflow: hidden; }
+  .seg button { background: #2a3546; color: #c9d2de; border: 0; padding: 6px 12px; cursor: pointer; }
+  .seg button.on { background: var(--primary); color: #fff; }
+  .chk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #c9d2de; white-space: nowrap; cursor: pointer; }
+
+  /* ---------- Editor: layout em 3 colunas ---------- */
+  .layout {
+    display: grid; grid-template-columns: 230px minmax(0, 1fr) 300px;
+    height: calc(100vh - 52px);
+  }
+  .panel { background: #fff; overflow: auto; padding: 14px; }
+  #palette { border-right: 1px solid var(--border); }
+  #props { border-left: 1px solid var(--border); }
+  .panel h4 { margin: 14px 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .panel h4:first-child { margin-top: 0; }
+  .pal-list { display: grid; gap: 6px; }
+  .pal-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: 4px; background: #fafbfd;
+    cursor: grab; user-select: none; font-size: 13px;
+  }
+  .pal-item:hover { border-color: #9fc0e8; background: #f2f7fd; }
+  .pal-item i { color: var(--primary); font-size: 16px; }
+  .pal-hint { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.45; }
+  .canvas { overflow: auto; padding: 16px; }
+
+  /* Painel de propriedades */
+  .prop { margin-bottom: 12px; }
+  .prop > label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .prop input[type=text], .prop textarea, .prop select {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--input-border); border-radius: 4px; font: inherit; font-size: 13px;
+  }
+  .prop textarea { resize: vertical; min-height: 60px; }
+  .prop .row { display: flex; gap: 6px; }
+  .prop .row > * { flex: 1; min-width: 0; }
+  .prop-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 12px; cursor: pointer; }
+  .prop-title { font-size: 15px; font-weight: 600; margin: 0 0 14px; display: flex; align-items: center; gap: 6px; }
+  .prop-title i { color: var(--primary); }
+  .prop-actions { display: flex; gap: 6px; margin-top: 16px; }
+  .pbtn { flex: 1; padding: 7px; border: 1px solid var(--border); background: #fff; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+  .pbtn:hover { background: #f5f7fb; }
+  .pbtn.danger { color: var(--danger); border-color: #f1c4c4; }
+  .muted { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .cond-box { background: #f6f8fb; border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+  .cond-box .row { margin-top: 6px; }
+
+  /* ---------- Frame GLPI ---------- */
+  #frame {
+    display: flex; min-height: 100%; background: var(--frame-bg);
+    border: 1px solid var(--border); box-shadow: 0 2px 12px rgba(15,23,42,.08);
+  }
+  .g-sidebar { width: 56px; flex-shrink: 0; background: var(--teal); color: #e7f3f7; display: flex; flex-direction: column; }
+  .g-logo { height: 60px; background: var(--teal-dark); border-bottom: 1px solid rgba(0,0,0,.25); }
+  .g-nav { display: flex; flex-direction: column; padding-top: 6px; flex: 1; }
+  .g-nav span { height: 29px; display: grid; place-items: center; font-size: 15px; }
+  .g-nav span.active { background: var(--teal-active); }
+  .g-collapse { height: 40px; display: grid; place-items: center; font-size: 16px; }
+  .g-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .g-header {
+    height: 46px; background: #fff; border-bottom: 1px solid #e6eaf0; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    display: flex; align-items: center; padding: 0 16px; gap: 10px; font-size: 12px;
+  }
+  .g-bc { display: flex; align-items: center; gap: 6px; color: #4a5568; white-space: nowrap; }
+  .g-bc .sep { color: #9aa5b1; }
+  .g-bc i { font-size: 13px; }
+  .g-divider { border-left: 1px solid #e6eaf0; height: 30px; margin: 0 2px 0 6px; }
+  .g-btn-search { border: 1px solid #4a5568; border-radius: 3px; padding: 2px 7px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; color: #2d3748; }
+  .g-search { margin-left: auto; display: flex; align-items: center; border: 1px solid var(--input-border); border-radius: 3px; width: 200px; height: 28px; padding: 0 8px; color: #9aa5b1; justify-content: space-between; }
+  .g-search i { color: #4a5568; }
+  .g-user { display: flex; align-items: center; gap: 6px; margin-left: 24px; }
+  .g-user .who { font-size: 11px; line-height: 1.35; color: #4a5568; }
+  .g-user .who small { font-size: 10px; display: block; color: var(--muted); }
+  .g-avatar { width: 32px; height: 32px; background: #6caae0; color: #fff; display: grid; place-items: center; border-radius: 3px; font-size: 11px; }
+
+  .g-body { padding: 18px 16px 40px; flex: 1; }
+  .form-title {
+    text-align: center; font-size: 21px; font-weight: 700; margin: 6px 0 14px; color: var(--text);
+    display: flex; justify-content: center; align-items: center; gap: 6px;
+  }
+  .form-title i { font-size: 24px; }
+  .form-title [contenteditable] { outline: none; border-radius: 3px; padding: 0 4px; }
+  ol.sections { list-style: none; margin: 0 auto; padding: 0; max-width: 760px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 3px; margin-bottom: 16px; }
+  .card-header {
+    background: #f2f6fb; border-bottom: 1px solid var(--border); padding: 13px 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title { margin: 0; font-size: 13.5px; font-weight: 400; color: var(--primary); flex: 1; }
+  .card-title [contenteditable] { outline: none; padding: 0 2px; border-radius: 3px; }
+  .card-body { padding: 22px 25px 6px; }
+  .fields { display: flex; flex-wrap: wrap; column-gap: 16px; min-height: 40px; }
+
+  .fc-field { position: relative; width: 100%; margin-bottom: 18px; }
+  .fc-field[data-w="75"] { width: calc(75% - 4px); }
+  .fc-field[data-w="50"] { width: calc(50% - 8px); }
+  .fc-field[data-w="25"] { width: calc(25% - 12px); }
+  .fc-field > label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 7px; color: var(--text); }
+  .red { color: var(--danger); }
+  .form-control, .form-select {
+    width: 100%; height: 30px; padding: 4px 8px; font: inherit; font-size: 13px; color: var(--text);
+    border: 1px solid var(--input-border); border-radius: 3px; background: #fff;
+  }
+  textarea.form-control { height: auto; min-height: 70px; resize: vertical; }
+  input[type=file].form-control { padding: 3px 6px; }
+  .form-control:focus, .form-select:focus { outline: none; border-color: #90b5e2; box-shadow: 0 0 0 3px rgba(32,107,196,.15); }
+  .form-select.compact { width: auto; min-width: 50px; height: 26px; font-size: 11px; padding: 2px 4px; color: #4a5568; }
+  .input-group { display: flex; }
+  .input-group .form-control { border-radius: 3px 0 0 3px; }
+  .addon {
+    width: 31px; border: 1px solid var(--input-border); border-left: 0; background: #f8fafc;
+    display: grid; place-items: center; color: #6b7785; cursor: pointer; font-size: 13px;
+  }
+  .addon:last-child { border-radius: 0 3px 3px 0; }
+  .date-input::-webkit-calendar-picker-indicator { display: none; }
+  .date-input.empty:not(:focus)::-webkit-datetime-edit { color: transparent; }
+  .choices { display: flex; flex-direction: column; gap: 5px; padding-top: 2px; }
+  .choice { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .help { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .fc-heading h3 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+  .fc-heading p { margin: 0; color: var(--muted); font-size: 13px; white-space: pre-line; }
+  .invalid-msg { display: none; color: var(--danger); font-size: 12px; margin-top: 4px; }
+  .fc-field.invalid .invalid-msg { display: block; }
+  .fc-field.invalid .form-control, .fc-field.invalid .form-select, .fc-field.invalid .addon { border-color: var(--danger); }
+  .cond-badge {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 5px;
+    font-size: 11px; color: #8a5a00; background: #fff6e0; border: 1px solid #f3dca4; border-radius: 10px; padding: 1px 8px;
+  }
+  .card-header .cond-badge { margin: 0; }
+  .g-submit { text-align: center; margin: 4px 0 10px; }
+  .g-btn { background: #fff; border: 1px solid #cfd7e1; border-radius: 4px; padding: 7px 18px; cursor: pointer; font-weight: 500; color: var(--text); }
+  .g-btn:hover { background: #f5f7fb; }
+
+  /* ---------- Modo edição: interações sobre o frame ---------- */
+  body:not(.preview) #formRoot input,
+  body:not(.preview) #formRoot select,
+  body:not(.preview) #formRoot textarea,
+  body:not(.preview) #formRoot .addon { pointer-events: none; }
+  body:not(.preview) .fc-field { cursor: grab; outline: 1px dashed transparent; outline-offset: 5px; border-radius: 2px; }
+  body:not(.preview) .fc-field:hover { outline-color: #9fc0e8; }
+  body:not(.preview) .fc-field.selected { outline: 2px solid var(--primary); }
+  body:not(.preview) .fc-section.selected { box-shadow: 0 0 0 2px var(--primary); }
+  body:not(.preview) .card-header { cursor: pointer; }
+  body:not(.preview) [contenteditable]:hover { background: rgba(32,107,196,.07); }
+  body:not(.preview) [contenteditable]:focus { background: rgba(32,107,196,.1); }
+  .fc-tools, .sec-tools { display: none; gap: 2px; }
+  body:not(.preview) .fc-tools { position: absolute; top: -14px; right: -6px; z-index: 2; }
+  body:not(.preview) .fc-field:hover .fc-tools, body:not(.preview) .fc-field.selected .fc-tools { display: flex; }
+  body:not(.preview) .sec-tools { display: flex; }
+  .tbtn {
+    width: 24px; height: 24px; border: 1px solid var(--border); background: #fff; border-radius: 4px;
+    display: grid; place-items: center; cursor: pointer; color: #4a5568; padding: 0; font-size: 14px;
+  }
+  .tbtn:hover { background: #eef3fa; color: var(--primary); }
+  .tbtn.del:hover { color: var(--danger); background: #fdeeee; }
+  .sec-handle { cursor: grab; }
+  body:not(.preview) .fields:empty::before {
+    content: "Arraste campos para cá ou clique em um tipo na paleta";
+    display: block; width: 100%; padding: 14px; margin-bottom: 16px; text-align: center;
+    color: var(--muted); font-size: 12px; border: 1px dashed #c4d0de; border-radius: 4px;
+  }
+  .sortable-ghost { opacity: .4; }
+  .fields .pal-item { width: 100%; margin-bottom: 18px; }
+  .add-section { display: block; margin: 0 auto 16px; max-width: 760px; width: 100%; padding: 10px; border: 1px dashed #b8c6d8; background: transparent; border-radius: 3px; color: var(--primary); cursor: pointer; }
+  .add-section:hover { background: #eef4fb; }
+
+  /* ---------- Modo visualização ---------- */
+  .previewbar { display: none; }
+  body.preview { background: var(--frame-bg); }
+  body.preview .editorbar, body.preview #palette, body.preview #props, body.preview .add-section { display: none; }
+  body.preview .layout { display: block; height: auto; }
+  body.preview .canvas { padding: 0; overflow: visible; }
+  body.preview #frame { border: 0; box-shadow: none; min-height: 100vh; }
+  body.preview .previewbar {
+    display: flex; gap: 6px; align-items: center; position: fixed; right: 16px; bottom: 16px; z-index: 30;
+    background: #1d2738; padding: 6px; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.25);
+  }
+  body.preview:not(.show-rules) .cond-badge { display: none; }
+  /* Expandir: mostra campos/seções ocultos por condição, com a regra que os ativa */
+  body.expand .fc-field[hidden], body.expand .fc-section[hidden] { display: block !important; }
+  body.expand .cond-badge { display: inline-flex !important; }
+  body.preview.expand .fc-field[hidden] { background: #fffbf0; outline: 1px dashed #e8c66a; outline-offset: 5px; border-radius: 2px; }
+  body.preview.expand .fc-section[hidden] { outline: 1px dashed #e8c66a; outline-offset: 3px; }
+  /* Expandir: lista todas as opções das listas suspensas */
+  .opt-list { display: none; }
+  body.preview.expand .opt-list {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; padding: 6px 8px;
+    background: #fffbf0; border: 1px dashed #e8c66a; border-radius: 3px; font-size: 11px; color: #8a5a00;
+  }
+  .opt-list-title { display: inline-flex; align-items: center; gap: 3px; margin-right: 2px; }
+  .opt-chip { background: #fff6e0; border: 1px solid #f3dca4; border-radius: 10px; padding: 1px 8px; color: #6b4a00; }
+
+  /* Modal e toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 160%); background: #fff; border-left: 4px solid #2fb344;
+    box-shadow: 0 8px 24px rgba(0,0,0,.15); border-radius: 4px; padding: 10px 16px; transition: transform .25s; z-index: 60;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto; }
+  .modal-backdrop.show { display: flex; }
+  .modal { background: #fff; border-radius: 6px; width: 100%; max-width: 560px; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .modal-header h4 { margin: 0; font-size: 16px; }
+  .modal-body { padding: 16px; }
+  .modal-body table { width: 100%; border-collapse: collapse; }
+  .modal-body td { padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .modal-body td:first-child { color: var(--muted); width: 45%; }
+  .modal-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+
+  @media (max-width: 1000px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    #palette, #props { border: 0; }
+    .pal-list { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    .editorbar { height: auto; flex-wrap: wrap; padding: 8px 12px; }
+    .editorbar input[type=text] { width: 100%; }
+    .g-search, .g-user .who { display: none; }
+  }
+  @media (max-width: 600px) {
+    .g-sidebar { display: none; }
+    .g-bc span:not(:last-child), .g-bc .sep { display: none; }
+    .fc-field[data-w] { width: 100%; }
+    .card-body { padding: 16px 14px 4px; }
+  }
+  @media print {
+    .editorbar, #palette, #props, .previewbar, .g-sidebar, .g-header, .g-submit, .add-section, .fc-tools, .sec-tools { display: none !important; }
+    .layout { display: block; height: auto; }
+    #frame { border: 0; box-shadow: none; background: #fff; }
+  }
+</style>
+
+<!-- Canivete CRC: tema da interface do editor (o "frame GLPI" mantém o visual do GLPI de propósito) -->
+<script>
+try{var t=localStorage.getItem('tema');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}
+window.addEventListener('storage',function(e){if(e.key==='tema'&&e.newValue)document.documentElement.setAttribute('data-theme',e.newValue)});
+</script>
+<style>
+  :root{
+    --ui-bg:#f5f6f8; --ui-surface:#fff; --ui-surface-2:#f2f4f7; --ui-line:#e4e7ec; --ui-line-2:#d0d5dd;
+    --ui-text:#101828; --ui-text-2:#344054; --ui-muted:#667085;
+    --ui-accent:#1f7590; --ui-accent-h:#19637a; --ui-accent-ink:#fff; --ui-accent-soft:#e6f3f6; --ui-accent-line:#b4d9e3;
+    --ui-bad:#c01048; --ui-bad-soft:#fdecf2; --ui-shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ui-bg:#0b0f15; --ui-surface:#131921; --ui-surface-2:#19212b; --ui-line:#232d3a; --ui-line-2:#334155;
+      --ui-text:#e8edf4; --ui-text-2:#c2ccd8; --ui-muted:#8693a6;
+      --ui-accent:#5db4cf; --ui-accent-h:#7cc4da; --ui-accent-ink:#06141a; --ui-accent-soft:rgba(93,180,207,.13); --ui-accent-line:rgba(93,180,207,.38);
+      --ui-bad:#ff6b8f; --ui-bad-soft:rgba(255,107,143,.12); --ui-shadow:0 1px 2px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ui-bg:#0b0f15; --ui-surface:#131921; --ui-surface-2:#19212b; --ui-line:#232d3a; --ui-line-2:#334155;
+    --ui-text:#e8edf4; --ui-text-2:#c2ccd8; --ui-muted:#8693a6;
+    --ui-accent:#5db4cf; --ui-accent-h:#7cc4da; --ui-accent-ink:#06141a; --ui-accent-soft:rgba(93,180,207,.13); --ui-accent-line:rgba(93,180,207,.38);
+    --ui-bad:#ff6b8f; --ui-bad-soft:rgba(255,107,143,.12); --ui-shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+  body{background:var(--ui-bg);-webkit-font-smoothing:antialiased}
+  .editorbar{height:56px;background:var(--ui-surface);color:var(--ui-text-2);border-bottom:1px solid var(--ui-line);gap:10px;padding:0 16px}
+  .editorbar input[type=text]{background:var(--ui-surface);border:1px solid var(--ui-line-2);color:var(--ui-text);border-radius:9px;height:34px;padding:0 12px;width:260px}
+  .editorbar input[type=text]:focus{outline:none;border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-soft)}
+  .ebtn{height:34px;background:var(--ui-surface);color:var(--ui-text-2);border:1px solid var(--ui-line-2);border-radius:9px;padding:0 12px;font-weight:600;font-size:13px;box-shadow:var(--ui-shadow)}
+  .ebtn:hover{background:var(--ui-surface-2)}
+  .ebtn.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:var(--ui-accent-ink)}
+  .ebtn.primary:hover{background:var(--ui-accent-h)}
+  .seg{border:1px solid var(--ui-line);border-radius:10px;padding:3px;gap:2px;background:var(--ui-surface-2)}
+  .seg button{background:none;color:var(--ui-muted);border-radius:7px;padding:5px 12px;font-weight:600;font-size:13px}
+  .seg button.on{background:var(--ui-surface);color:var(--ui-text);box-shadow:var(--ui-shadow)}
+  .chk{color:var(--ui-muted)}
+  .chk input,.prop-check input{accent-color:var(--ui-accent)}
+  .layout{height:calc(100vh - 56px)}
+  .panel{background:var(--ui-surface);color:var(--ui-text)}
+  #palette{border-right:1px solid var(--ui-line)} #props{border-left:1px solid var(--ui-line)}
+  .panel h4{color:var(--ui-muted)}
+  .pal-item{border:1px solid var(--ui-line);background:var(--ui-surface-2);border-radius:9px;color:var(--ui-text)}
+  .pal-item:hover{border-color:var(--ui-accent-line);background:var(--ui-accent-soft)}
+  .pal-item i,.prop-title i{color:var(--ui-accent)}
+  .pal-hint,.panel .muted{color:var(--ui-muted)}
+  .prop>label{color:var(--ui-text-2)}
+  .prop input[type=text],.prop textarea,.prop select{background:var(--ui-surface);color:var(--ui-text);border:1px solid var(--ui-line-2);border-radius:8px;padding:7px 9px}
+  .prop input[type=text]:focus,.prop textarea:focus,.prop select:focus{outline:none;border-color:var(--ui-accent);box-shadow:0 0 0 3px var(--ui-accent-soft)}
+  .pbtn{background:var(--ui-surface);color:var(--ui-text-2);border:1px solid var(--ui-line-2);border-radius:8px;font-weight:600}
+  .pbtn:hover{background:var(--ui-surface-2)}
+  .pbtn.danger{color:var(--ui-bad);border-color:color-mix(in srgb,var(--ui-bad) 35%,var(--ui-line))}
+  .cond-box{background:var(--ui-surface-2);border:1px solid var(--ui-line);border-radius:8px}
+  .canvas{background:var(--ui-bg);padding:20px}
+  #frame{border-radius:12px;overflow:hidden;border-color:var(--ui-line)}
+  .add-section{border-radius:10px}
+  body.preview .previewbar{background:var(--ui-surface);border:1px solid var(--ui-line);border-radius:12px;padding:8px}
+  .toast{background:var(--ui-text);color:var(--ui-bg);border-left:0;border-radius:11px;font-weight:500}
+  .modal{border-radius:16px}
+  @media (max-width:1000px){.editorbar{height:auto;padding:10px 16px}.layout{height:auto}}
+</style>
+</head>
+<body>
+
+<div class="editorbar">
+  <input type="text" id="titleInput" placeholder="Nome do formulário">
+  <div class="seg">
+    <button data-mode="edit" class="on"><i class="ti ti-pencil"></i> Editar</button>
+    <button data-mode="preview"><i class="ti ti-eye"></i> Visualizar</button>
+  </div>
+  <span class="spacer"></span>
+  <label class="chk"><input type="checkbox" id="showRules"> Mostrar regras na imagem</label>
+  <label class="chk" title="Na visualização, mostra os campos ocultos e a condição que os ativa"><input type="checkbox" id="expand"> Expandir ocultos</label>
+  <button class="ebtn primary" data-action="png"><i class="ti ti-photo-down"></i> Baixar PNG</button>
+  <button class="ebtn" data-action="export" title="Exportar JSON"><i class="ti ti-download"></i> JSON</button>
+  <button class="ebtn" data-action="import" title="Importar JSON"><i class="ti ti-upload"></i></button>
+  <button class="ebtn" data-action="example" title="Carregar exemplo Liberação de Acessos"><i class="ti ti-template"></i> Exemplo</button>
+  <button class="ebtn" data-action="new" title="Novo formulário"><i class="ti ti-file-plus"></i> Novo</button>
+  <input type="file" id="importFile" accept=".json,application/json" hidden>
+</div>
+
+<div class="layout">
+  <aside class="panel" id="palette"></aside>
+
+  <div class="canvas">
+    <div id="frame">
+      <div class="g-sidebar">
+        <div class="g-logo"></div>
+        <div class="g-nav">
+          <span><i class="ti ti-arrow-big-right"></i></span>
+          <span><i class="ti ti-package"></i></span>
+          <span class="active"><i class="ti ti-headset"></i></span>
+          <span><i class="ti ti-briefcase"></i></span>
+          <span><i class="ti ti-puzzle"></i></span>
+          <span><i class="ti ti-shield-check"></i></span>
+          <span><i class="ti ti-settings"></i></span>
+        </div>
+        <div class="g-collapse"><i class="ti ti-chevrons-right"></i></div>
+      </div>
+      <div class="g-main">
+        <div class="g-header">
+          <div class="g-bc">
+            <span><i class="ti ti-home-2"></i> Home</span><span class="sep">/</span>
+            <span><i class="ti ti-headset"></i> Assistência</span><span class="sep">/</span>
+            <span><i class="ti ti-edit"></i> Formulários</span>
+          </div>
+          <div class="g-divider"></div>
+          <span class="g-btn-search"><i class="ti ti-search"></i> Pesquisar</span>
+          <div class="g-search"><span>Pesquisar…</span><i class="ti ti-search"></i></div>
+          <div class="g-user">
+            <div class="who">Atendente Técnico<small>Low Cost (estrutura de árvore)</small></div>
+            <span class="g-avatar">GS</span>
+            <i class="ti ti-chevron-down" style="font-size:12px;color:#4a5568"></i>
+          </div>
+        </div>
+        <div class="g-body">
+          <form id="formRoot" novalidate></form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="panel" id="props"></aside>
+</div>
+
+<div class="previewbar">
+  <button class="ebtn" data-mode="edit"><i class="ti ti-pencil"></i> Voltar a editar</button>
+  <label class="chk" title="Mostra os campos ocultos e a condição que os ativa"><input type="checkbox" id="expand2"> Expandir</label>
+  <label class="chk"><input type="checkbox" id="showRules2"> Regras</label>
+  <button class="ebtn primary" data-action="png"><i class="ti ti-photo-down"></i> Baixar PNG</button>
+</div>
+
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h4>Resumo da solicitação</h4>
+      <button class="tbtn" data-close aria-label="Fechar"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body"><table id="summary"></table></div>
+    <div class="modal-footer">
+      <button class="g-btn" data-close>Fechar</button>
+      <button class="g-btn" id="btnCopy">Copiar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var TYPES = {
+  text:     { name: 'Texto',              icon: 'ti-cursor-text', group: 'Básicos' },
+  textarea: { name: 'Área de texto',      icon: 'ti-align-left',  group: 'Básicos' },
+  number:   { name: 'Número',             icon: 'ti-123',         group: 'Básicos' },
+  date:     { name: 'Data',               icon: 'ti-calendar',    group: 'Básicos' },
+  time:     { name: 'Hora',               icon: 'ti-clock',       group: 'Básicos' },
+  select:   { name: 'Lista suspensa',     icon: 'ti-selector',    group: 'Básicos', options: true },
+  cpf:      { name: 'CPF',                icon: 'ti-id',          group: 'Documentos BR' },
+  rg:       { name: 'RG',                 icon: 'ti-id-badge',    group: 'Documentos BR' },
+  cnpj:     { name: 'CNPJ',               icon: 'ti-building',    group: 'Documentos BR' },
+  phone:    { name: 'Telefone',           icon: 'ti-phone',       group: 'Documentos BR' },
+  email:    { name: 'E-mail',             icon: 'ti-mail',        group: 'Documentos BR' },
+  plate:    { name: 'Placa',              icon: 'ti-car',         group: 'Documentos BR' },
+  checkbox: { name: 'Checkbox',           icon: 'ti-checkbox',    group: 'Outros', options: true },
+  radio:    { name: 'Rádio',              icon: 'ti-circle-dot',  group: 'Outros', options: true },
+  file:     { name: 'Anexo',              icon: 'ti-paperclip',   group: 'Outros' },
+  heading:  { name: 'Título / descrição', icon: 'ti-heading',     group: 'Outros' }
+};
+var MASKED = { cpf: 1, cnpj: 1, phone: 1, plate: 1 };
+var NO_PLACEHOLDER = { date: 1, time: 1, select: 1, checkbox: 1, radio: 1, file: 1, heading: 1 };
+var STORE_KEY = 'fc-builder-v1';
+
+function $(s, root) { return (root || document).querySelector(s); }
+function $$(s, root) { return Array.prototype.slice.call((root || document).querySelectorAll(s)); }
+function uid(p) { return (p || 'f') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function newField(type, extra) {
+  var f = { id: uid(), type: type, label: TYPES[type].name, required: false, placeholder: '', help: '',
+            options: TYPES[type].options ? ['Opção 1', 'Opção 2'] : [], width: 100, condition: null };
+  if (type === 'heading') { f.label = 'Título'; f.help = 'Texto de descrição'; }
+  for (var k in extra) f[k] = extra[k];
+  return f;
+}
+
+function exampleState() {
+  function f(id, label, type, req, extra) {
+    var o = newField(type || 'text', extra || {});
+    o.id = id; o.label = label; o.required = req !== false;
+    return o;
+  }
+  function c() { return { fieldId: 'cargo', op: 'eq', value: 'Sim' }; }
+  return {
+    title: 'LIBERAÇÃO DE ACESSOS',
+    sections: [{ id: 's1', name: 'Seção', condition: null, fields: [
+      f('data', 'Data de visita', 'date'),
+      f('empresa', 'Empresa'),
+      f('nome', 'Nome completo'),
+      f('motivo', 'Motivo da visita:'),
+      f('rg', 'RG', 'rg'),
+      f('cpf', 'CPF', 'cpf'),
+      f('calcado', 'Numeração do calçado'),
+      f('nbm', 'Modelo notebook', 'text', false),
+      f('nbs', 'Número de série notebook:', 'text', false),
+      f('cargo', 'Cargo de gestão, cliente ou marketing', 'select', true, { options: ['Sim', 'Não'] }),
+      f('sm1m', 'Modelo smartphone (1)', 'text', false, { condition: c() }),
+      f('sm1s', 'Número de série smartphone (1)', 'text', false, { condition: c() }),
+      f('sm2m', 'Modelo smartphone (2)', 'text', false, { condition: c() }),
+      f('sm2s', 'Número de série smartphone (2)', 'text', false, { condition: c() }),
+      f('carm', 'Modelo do carro', 'text', false, { condition: c() }),
+      f('carf', 'Fabricante do carro', 'text', false, { condition: c() }),
+      f('carc', 'Cor do carro', 'text', false, { condition: c() }),
+      f('carp', 'Placa do carro', 'plate', false, { condition: c() }),
+      f('obs', 'Observação:', 'text', false)
+    ] }]
+  };
+}
+
+function blankState() {
+  return { title: 'NOVO FORMULÁRIO', sections: [{ id: uid('s'), name: 'Seção', condition: null, fields: [] }] };
+}
+
+// ---------- Estado ----------
+var state, ui = { mode: 'edit', showRules: false, expand: false, selected: null };
+(function load() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (saved && saved.state && Array.isArray(saved.state.sections)) {
+      state = saved.state;
+      ui.showRules = !!saved.showRules;
+      ui.expand = !!saved.expand;
+    }
+  } catch (e) {}
+  if (!state) state = exampleState();
+})();
+
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ state: state, showRules: ui.showRules, expand: ui.expand })); } catch (e) {}
+}
+
+function allFields() {
+  var out = [];
+  state.sections.forEach(function (s) { s.fields.forEach(function (f) { out.push(f); }); });
+  return out;
+}
+function findField(id) { return allFields().filter(function (f) { return f.id === id; })[0]; }
+function findSection(id) { return state.sections.filter(function (s) { return s.id === id; })[0]; }
+function sectionOf(fid) {
+  return state.sections.filter(function (s) { return s.fields.some(function (f) { return f.id === fid; }); })[0];
+}
+function selectedObj() {
+  if (!ui.selected) return null;
+  return ui.selected.kind === 'field' ? findField(ui.selected.id) : findSection(ui.selected.id);
+}
+
+// ---------- Paleta ----------
+function renderPalette() {
+  var groups = {};
+  Object.keys(TYPES).forEach(function (t) {
+    var g = TYPES[t].group;
+    (groups[g] = groups[g] || []).push(t);
+  });
+  var html = '';
+  Object.keys(groups).forEach(function (g) {
+    html += '<h4>' + g + '</h4><div class="pal-list" data-pal>';
+    groups[g].forEach(function (t) {
+      html += '<div class="pal-item" data-type="' + t + '"><i class="ti ' + TYPES[t].icon + '"></i>' + TYPES[t].name + '</div>';
+    });
+    html += '</div>';
+  });
+  html += '<h4>Estrutura</h4><div class="pal-list"><div class="pal-item" data-add-section><i class="ti ti-layout-rows"></i>Nova seção</div></div>';
+  html += '<p class="pal-hint">Arraste um tipo para dentro de uma seção ou clique para adicioná-lo à seção selecionada. Arraste os campos no formulário para reordenar.</p>';
+  $('#palette').innerHTML = html;
+  $$('[data-pal]').forEach(function (el) {
+    Sortable.create(el, { group: { name: 'fields', pull: 'clone', put: false }, sort: false, animation: 150, forceFallback: true });
+  });
+}
+
+// ---------- Formulário ----------
+function condText(c) {
+  if (!c || !c.fieldId) return '';
+  var t = findField(c.fieldId);
+  if (!t) return '';
+  return t.label.replace(/:\s*$/, '') + (c.op === 'ne' ? ' ≠ ' : ' = ') + (c.value || '(vazio)');
+}
+
+function controlHTML(f) {
+  var id = 'in_' + f.id;
+  var ph = f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : '';
+  var base = ' id="' + id + '" name="' + id + '" data-fid="' + f.id + '"';
+  switch (f.type) {
+    case 'textarea': return '<textarea class="form-control" rows="3"' + base + ph + '></textarea>';
+    case 'number':   return '<input type="number" class="form-control"' + base + ph + '>';
+    case 'email':    return '<input type="email" class="form-control"' + base + ph + '>';
+    case 'time':     return '<input type="time" class="form-control"' + base + '>';
+    case 'file':     return '<input type="file" class="form-control"' + base + '>';
+    case 'date':
+      return '<div class="input-group"><input type="date" class="form-control date-input empty"' + base + '>' +
+             '<span class="addon" data-pick><i class="ti ti-calendar"></i></span>' +
+             '<span class="addon" data-clear title="Limpar"><i class="ti ti-circle-x"></i></span></div>';
+    case 'select':
+      return '<select class="form-select compact"' + base + '><option value="">-----</option>' +
+             f.options.map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('') + '</select>' +
+             '<div class="opt-list"><span class="opt-list-title"><i class="ti ti-list"></i> Opções da lista:</span>' +
+             ['-----'].concat(f.options).map(function (o) { return '<span class="opt-chip">' + esc(o) + '</span>'; }).join('') +
+             '</div>';
+    case 'checkbox':
+    case 'radio':
+      return '<div class="choices">' + f.options.map(function (o) {
+        return '<label class="choice"><input type="' + f.type + '" name="' + id + '" value="' + esc(o) + '"> ' + esc(o) + '</label>';
+      }).join('') + '</div>';
+    default:
+      var mode = MASKED[f.type] && f.type !== 'plate' ? ' inputmode="numeric"' : '';
+      return '<input type="text" class="form-control"' + base + ph + mode + (MASKED[f.type] ? ' data-mask="' + f.type + '"' : '') + '>';
+  }
+}
+
+function fieldHTML(f) {
+  var sel = ui.selected && ui.selected.kind === 'field' && ui.selected.id === f.id ? ' selected' : '';
+  var cond = condText(f.condition);
+  var inner;
+  if (f.type === 'heading') {
+    inner = '<div class="fc-heading"><h3>' + esc(f.label) + '</h3>' + (f.help ? '<p>' + esc(f.help) + '</p>' : '') + '</div>';
+  } else {
+    inner = '<label for="in_' + f.id + '">' + esc(f.label) + (f.required ? ' <span class="red">*</span>' : '') + '</label>' +
+            '<div class="form_field">' + controlHTML(f) + '</div>' +
+            (f.help ? '<small class="help">' + esc(f.help) + '</small>' : '') +
+            '<div class="invalid-msg"></div>';
+  }
+  return '<div class="fc-field' + sel + '" data-fid="' + f.id + '" data-w="' + (f.width || 100) + '">' +
+    '<div class="fc-tools" data-html2canvas-ignore>' +
+      '<button type="button" class="tbtn" data-act="dup" title="Duplicar"><i class="ti ti-copy"></i></button>' +
+      '<button type="button" class="tbtn del" data-act="del" title="Excluir"><i class="ti ti-trash"></i></button>' +
+    '</div>' + inner +
+    (cond ? '<div><span class="cond-badge"><i class="ti ti-git-branch"></i> Exibido quando: ' + esc(cond) + '</span></div>' : '') +
+  '</div>';
+}
+
+function sectionHTML(s) {
+  var sel = ui.selected && ui.selected.kind === 'section' && ui.selected.id === s.id ? ' selected' : '';
+  var cond = condText(s.condition);
+  var editable = ui.mode === 'edit' ? ' contenteditable="true" spellcheck="false"' : '';
+  return '<li class="card fc-section' + sel + '" data-sid="' + s.id + '">' +
+    '<div class="card-header">' +
+      '<h2 class="card-title"><span class="sec-name"' + editable + '>' + esc(s.name) + '</span></h2>' +
+      (cond ? '<span class="cond-badge"><i class="ti ti-git-branch"></i> Seção exibida quando: ' + esc(cond) + '</span>' : '') +
+      '<div class="sec-tools" data-html2canvas-ignore>' +
+        '<span class="tbtn sec-handle" title="Arrastar seção"><i class="ti ti-grip-vertical"></i></span>' +
+        '<button type="button" class="tbtn del" data-sact="del" title="Excluir seção"><i class="ti ti-trash"></i></button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="card-body"><div class="fields" data-sid="' + s.id + '">' + s.fields.map(fieldHTML).join('') + '</div></div>' +
+  '</li>';
+}
+
+var sortables = [];
+function renderForm() {
+  var editable = ui.mode === 'edit' ? ' contenteditable="true" spellcheck="false"' : '';
+  $('#formRoot').innerHTML =
+    '<h1 class="form-title"><span id="formTitle"' + editable + '>' + esc(state.title) + '</span>' +
+    '<i class="ti ti-printer"></i></h1>' +
+    '<ol class="sections" id="sectionsList">' + state.sections.map(sectionHTML).join('') + '</ol>' +
+    '<button type="button" class="add-section" data-add-section data-html2canvas-ignore><i class="ti ti-plus"></i> Adicionar seção</button>' +
+    '<div class="g-submit"><button type="submit" class="g-btn">Enviar</button></div>';
+  initSortables();
+  if (ui.mode === 'preview') applyConditions();
+}
+
+function initSortables() {
+  sortables.forEach(function (s) { s.destroy(); });
+  sortables = [];
+  if (ui.mode !== 'edit') return;
+  sortables.push(Sortable.create($('#sectionsList'), { handle: '.sec-handle', animation: 150, forceFallback: true, onEnd: syncFromDom }));
+  $$('.fields').forEach(function (el) {
+    sortables.push(Sortable.create(el, {
+      group: 'fields', animation: 150, forceFallback: true, filter: '.tbtn', preventOnFilter: false,
+      onAdd: function (evt) {
+        var type = evt.item.dataset.type;
+        if (!type) return;
+        evt.item.parentNode.removeChild(evt.item);
+        addField(type, evt.to.dataset.sid, evt.newIndex);
+      },
+      onEnd: function (evt) { if (!evt.item.dataset.type) syncFromDom(); }
+    }));
+  });
+}
+
+function syncFromDom() {
+  var byField = {}, bySection = {};
+  state.sections.forEach(function (s) {
+    bySection[s.id] = s;
+    s.fields.forEach(function (f) { byField[f.id] = f; });
+  });
+  state.sections = $$('#sectionsList > .fc-section').map(function (el) {
+    var s = bySection[el.dataset.sid];
+    s.fields = $$('.fields > .fc-field', el).map(function (x) { return byField[x.dataset.fid]; }).filter(Boolean);
+    return s;
+  });
+  setTimeout(render, 0);
+}
+
+function currentSectionId() {
+  if (ui.selected) {
+    if (ui.selected.kind === 'section') return ui.selected.id;
+    var s = sectionOf(ui.selected.id);
+    if (s) return s.id;
+  }
+  return state.sections.length ? state.sections[state.sections.length - 1].id : null;
+}
+
+function addField(type, sid, index) {
+  if (!state.sections.length) state.sections.push({ id: uid('s'), name: 'Seção', condition: null, fields: [] });
+  var s = findSection(sid) || state.sections[state.sections.length - 1];
+  var f = newField(type);
+  if (index == null || index > s.fields.length) index = s.fields.length;
+  s.fields.splice(index, 0, f);
+  ui.selected = { kind: 'field', id: f.id };
+  setTimeout(function () {
+    render();
+    var el = $('.fc-field[data-fid="' + f.id + '"]');
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, 0);
+}
+
+function addSection() {
+  var s = { id: uid('s'), name: 'Seção', condition: null, fields: [] };
+  state.sections.push(s);
+  ui.selected = { kind: 'section', id: s.id };
+  render();
+}
+
+function clearRefs(ids) {
+  allFields().concat(state.sections).forEach(function (o) {
+    if (o.condition && ids.indexOf(o.condition.fieldId) !== -1) o.condition = null;
+  });
+}
+
+function deleteField(id) {
+  var s = sectionOf(id);
+  if (!s) return;
+  s.fields = s.fields.filter(function (f) { return f.id !== id; });
+  clearRefs([id]);
+  if (ui.selected && ui.selected.id === id) ui.selected = null;
+  render();
+}
+
+function duplicateField(id) {
+  var s = sectionOf(id);
+  var i = s.fields.findIndex(function (f) { return f.id === id; });
+  var copy = JSON.parse(JSON.stringify(s.fields[i]));
+  copy.id = uid();
+  s.fields.splice(i + 1, 0, copy);
+  ui.selected = { kind: 'field', id: copy.id };
+  render();
+}
+
+function deleteSection(id) {
+  var s = findSection(id);
+  if (s.fields.length && !confirm('Excluir a seção "' + s.name + '" e seus ' + s.fields.length + ' campo(s)?')) return;
+  clearRefs(s.fields.map(function (f) { return f.id; }));
+  state.sections = state.sections.filter(function (x) { return x.id !== id; });
+  if (ui.selected && (ui.selected.id === id || !selectedObj())) ui.selected = null;
+  render();
+}
+
+// ---------- Propriedades ----------
+function condEditorHTML(obj, selfId) {
+  var c = obj.condition || { fieldId: '', op: 'eq', value: '' };
+  var targets = allFields().filter(function (f) {
+    return f.id !== selfId && f.type !== 'heading' && f.type !== 'file';
+  });
+  var html = '<div class="prop"><label>Condição de exibição</label><div class="cond-box">' +
+    '<select data-c="fieldId"><option value="">Sempre visível</option>' +
+    targets.map(function (f) {
+      return '<option value="' + f.id + '"' + (f.id === c.fieldId ? ' selected' : '') + '>Mostrar se: ' + esc(f.label) + '</option>';
+    }).join('') + '</select>';
+  if (c.fieldId) {
+    var t = findField(c.fieldId);
+    html += '<div class="row"><select data-c="op">' +
+      '<option value="eq"' + (c.op !== 'ne' ? ' selected' : '') + '>for igual a</option>' +
+      '<option value="ne"' + (c.op === 'ne' ? ' selected' : '') + '>for diferente de</option></select>';
+    if (t && t.options && t.options.length) {
+      html += '<select data-c="value"><option value="">(vazio)</option>' + t.options.map(function (o) {
+        return '<option' + (o === c.value ? ' selected' : '') + '>' + esc(o) + '</option>';
+      }).join('') + '</select>';
+    } else {
+      html += '<input type="text" data-c="value" value="' + esc(c.value) + '" placeholder="valor">';
+    }
+    html += '</div>';
+  }
+  return html + '</div></div>';
+}
+
+function renderProps() {
+  var obj = selectedObj();
+  var p = $('#props');
+  if (!obj) {
+    p.innerHTML = '<p class="prop-title"><i class="ti ti-adjustments"></i> Propriedades</p>' +
+      '<p class="muted">Clique em um campo ou no cabeçalho de uma seção para editar suas propriedades.</p>' +
+      '<p class="muted">O título do formulário e o nome das seções também podem ser editados clicando direto no texto.</p>' +
+      '<p class="muted">Use <b>Visualizar</b> para ver exatamente como ficará no GLPI e <b>Baixar PNG</b> para gerar a imagem para a equipe de TI.</p>';
+    return;
+  }
+  if (ui.selected.kind === 'section') {
+    p.innerHTML = '<p class="prop-title"><i class="ti ti-layout-rows"></i> Seção</p>' +
+      '<div class="prop"><label>Nome</label><input type="text" data-p="name" value="' + esc(obj.name) + '"></div>' +
+      condEditorHTML(obj, null) +
+      '<div class="prop-actions"><button class="pbtn danger" data-pact="delsec"><i class="ti ti-trash"></i> Excluir seção</button></div>';
+    return;
+  }
+  var f = obj;
+  var html = '<p class="prop-title"><i class="ti ' + TYPES[f.type].icon + '"></i> ' + TYPES[f.type].name + '</p>';
+  html += '<div class="prop"><label>Tipo</label><select data-p="type">' + Object.keys(TYPES).map(function (t) {
+    return '<option value="' + t + '"' + (t === f.type ? ' selected' : '') + '>' + TYPES[t].name + '</option>';
+  }).join('') + '</select></div>';
+  html += '<div class="prop"><label>' + (f.type === 'heading' ? 'Título' : 'Rótulo') + '</label><input type="text" data-p="label" value="' + esc(f.label) + '"></div>';
+  if (f.type !== 'heading') {
+    html += '<label class="prop-check"><input type="checkbox" data-p="required"' + (f.required ? ' checked' : '') + '> Obrigatório</label>';
+  }
+  if (!NO_PLACEHOLDER[f.type]) {
+    html += '<div class="prop"><label>Placeholder</label><input type="text" data-p="placeholder" value="' + esc(f.placeholder) + '"></div>';
+  }
+  if (TYPES[f.type].options) {
+    html += '<div class="prop"><label>Opções (uma por linha)</label><textarea data-p="options" rows="4">' + esc(f.options.join('\n')) + '</textarea></div>';
+  }
+  html += '<div class="prop"><label>' + (f.type === 'heading' ? 'Descrição' : 'Texto de ajuda') + '</label><textarea data-p="help" rows="2">' + esc(f.help) + '</textarea></div>';
+  html += '<div class="prop"><label>Largura</label><select data-p="width">' + [100, 75, 50, 25].map(function (w) {
+    return '<option value="' + w + '"' + (w === (f.width || 100) ? ' selected' : '') + '>' + w + '%</option>';
+  }).join('') + '</select></div>';
+  html += condEditorHTML(f, f.id);
+  html += '<div class="prop-actions">' +
+    '<button class="pbtn" data-pact="dup"><i class="ti ti-copy"></i> Duplicar</button>' +
+    '<button class="pbtn danger" data-pact="del"><i class="ti ti-trash"></i> Excluir</button></div>';
+  p.innerHTML = html;
+}
+
+function onPropChange(e) {
+  var el = e.target, obj = selectedObj();
+  if (!obj) return;
+  if (el.dataset.p) {
+    var key = el.dataset.p;
+    var v = el.type === 'checkbox' ? el.checked : el.value;
+    if (key === 'options') v = el.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    else if (key === 'width') v = +v;
+    else if (obj[key] === v) return;
+    obj[key] = v;
+    if (key === 'type') {
+      if (TYPES[v].options && !obj.options.length) obj.options = ['Opção 1', 'Opção 2'];
+      renderProps();
+    }
+  } else if (el.dataset.c) {
+    var c = obj.condition || { fieldId: '', op: 'eq', value: '' };
+    if (c[el.dataset.c] === el.value) return;
+    c[el.dataset.c] = el.value;
+    if (el.dataset.c === 'fieldId') c.value = '';
+    obj.condition = c.fieldId ? c : null;
+    if (el.dataset.c === 'fieldId') renderProps();
+  } else {
+    return;
+  }
+  renderForm();
+  save();
+}
+
+// ---------- Visualização: máscaras, condições, validação ----------
+function applyMask(el) {
+  var t = el.dataset.mask, d = el.value.replace(/\D/g, '');
+  if (t === 'cpf') {
+    d = d.slice(0, 11);
+    el.value = d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  } else if (t === 'cnpj') {
+    d = d.slice(0, 14);
+    el.value = d.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+                .replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2');
+  } else if (t === 'phone') {
+    d = d.slice(0, 11);
+    el.value = d.length > 10 ? d.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, '($1) $2-$3')
+             : d.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '($1) $2-$3').replace(/^(\d{1,2})$/, '($1');
+    el.value = el.value.replace(/-$/, '');
+  } else if (t === 'plate') {
+    el.value = el.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
+  }
+}
+
+function validCPF(v) {
+  var d = v.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+  for (var t = 9; t < 11; t++) {
+    var s = 0;
+    for (var i = 0; i < t; i++) s += d[i] * (t + 1 - i);
+    if (((s * 10) % 11) % 10 !== +d[t]) return false;
+  }
+  return true;
+}
+
+function validCNPJ(v) {
+  var d = v.replace(/\D/g, '');
+  if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false;
+  function dig(n) {
+    var w = n === 12 ? [5,4,3,2,9,8,7,6,5,4,3,2] : [6,5,4,3,2,9,8,7,6,5,4,3,2], s = 0;
+    for (var i = 0; i < n; i++) s += d[i] * w[i];
+    var r = s % 11;
+    return r < 2 ? 0 : 11 - r;
+  }
+  return dig(12) === +d[12] && dig(13) === +d[13];
+}
+
+function isShown(el) { return !el.closest('[hidden]'); }
+
+function getValue(fid) {
+  var w = $('#formRoot .fc-field[data-fid="' + fid + '"]');
+  if (!w || !isShown(w)) return '';
+  var f = findField(fid);
+  if (f.type === 'checkbox') return $$('input:checked', w).map(function (i) { return i.value; });
+  if (f.type === 'radio') { var r = $('input:checked', w); return r ? r.value : ''; }
+  var input = $('[data-fid="' + fid + '"].form-control, [data-fid="' + fid + '"].form-select', w);
+  if (!input) return '';
+  if (f.type === 'file') return input.files && input.files.length ? input.files[0].name : '';
+  return input.value.trim();
+}
+
+function evalCond(c) {
+  if (!c || !c.fieldId || !findField(c.fieldId)) return true;
+  var v = getValue(c.fieldId);
+  var has = Array.isArray(v) ? v.indexOf(c.value) !== -1 : v === c.value;
+  return c.op === 'ne' ? !has : has;
+}
+
+function applyConditions() {
+  // duas passadas para resolver condições encadeadas
+  for (var pass = 0; pass < 2; pass++) {
+    state.sections.forEach(function (s) {
+      var sel = $('#formRoot .fc-section[data-sid="' + s.id + '"]');
+      if (sel) sel.hidden = !evalCond(s.condition);
+      s.fields.forEach(function (f) {
+        var el = $('#formRoot .fc-field[data-fid="' + f.id + '"]');
+        if (el) el.hidden = !evalCond(f.condition);
+      });
+    });
+  }
+}
+
+function fieldError(f, w) {
+  if (f.type === 'heading') return '';
+  var v = getValue(f.id);
+  var empty = Array.isArray(v) ? !v.length : !v;
+  if (empty) return f.required ? 'Campo obrigatório' : '';
+  if (f.type === 'cpf' && !validCPF(v)) return 'CPF inválido';
+  if (f.type === 'cnpj' && !validCNPJ(v)) return 'CNPJ inválido';
+  if (f.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'E-mail inválido';
+  if (f.type === 'phone' && v.replace(/\D/g, '').length < 10) return 'Telefone incompleto';
+  return '';
+}
+
+function formatValue(f, v) {
+  if (Array.isArray(v)) return v.join(', ');
+  if (f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v.split('-').reverse().join('-');
+  return v;
+}
+
+function submitForm() {
+  var first = null, rows = [];
+  allFields().forEach(function (f) {
+    var w = $('#formRoot .fc-field[data-fid="' + f.id + '"]');
+    if (!w || !isShown(w)) return;
+    var err = fieldError(f, w);
+    w.classList.toggle('invalid', !!err);
+    $('.invalid-msg', w) && ($('.invalid-msg', w).textContent = err);
+    if (err && !first) first = w;
+    if (f.type !== 'heading') rows.push([f.label.replace(/:\s*$/, ''), formatValue(f, getValue(f.id))]);
+  });
+  if (first) {
+    first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    var inp = $('input, select, textarea', first);
+    if (inp) inp.focus({ preventScroll: true });
+    return;
+  }
+  $('#summary').innerHTML = rows.map(function (r) {
+    return '<tr><td>' + esc(r[0]) + '</td><td>' + (r[1] ? esc(r[1]) : '<span style="color:#94a3b8">—</span>') + '</td></tr>';
+  }).join('');
+  $('#btnCopy').onclick = function () {
+    var text = state.title + '\n' + rows.map(function (r) { return r[0] + ': ' + (r[1] || '-'); }).join('\n');
+    navigator.clipboard.writeText(text).then(function () { toast('Copiado para a área de transferência.'); });
+  };
+  $('#modal').classList.add('show');
+}
+
+// ---------- Ações gerais ----------
+function render() {
+  document.body.classList.toggle('preview', ui.mode === 'preview');
+  document.body.classList.toggle('show-rules', ui.showRules);
+  document.body.classList.toggle('expand', ui.expand);
+  $$('[data-mode]').forEach(function (b) { b.classList.toggle('on', b.dataset.mode === ui.mode); });
+  $('#showRules').checked = $('#showRules2').checked = ui.showRules;
+  $('#expand').checked = $('#expand2').checked = ui.expand;
+  if (document.activeElement !== $('#titleInput')) $('#titleInput').value = state.title;
+  renderForm();
+  renderProps();
+  save();
+}
+
+function setMode(m) {
+  ui.mode = m;
+  if (m === 'preview') ui.selected = null;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function slug(s) {
+  return (s || 'formulario').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'formulario';
+}
+
+function download(name, href) {
+  var a = document.createElement('a');
+  a.href = href; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+function exportJSON() {
+  var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  download(slug(state.title) + '.json', url);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+function importJSON(file) {
+  var r = new FileReader();
+  r.onload = function () {
+    try {
+      var s = JSON.parse(r.result);
+      if (!s || !Array.isArray(s.sections)) throw new Error();
+      state = s; ui.selected = null; render();
+      toast('Formulário importado.');
+    } catch (e) { toast('Arquivo JSON inválido.'); }
+  };
+  r.readAsText(file);
+}
+
+async function downloadPNG() {
+  if (typeof html2canvas === 'undefined') { toast('Não foi possível carregar o gerador de imagem (sem internet?).'); return; }
+  var prevMode = ui.mode, prevSel = ui.selected;
+  var all = ui.expand;
+  if (prevMode !== 'preview') { ui.mode = 'preview'; ui.selected = null; render(); }
+  var frame = $('#frame');
+  var y = window.scrollY;
+  try {
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    var canvas = await html2canvas(frame, {
+      scale: 2, backgroundColor: '#f5f7fb', scrollX: 0, scrollY: -window.scrollY,
+      // html2canvas desenha o valor bruto (aaaa-mm-dd); na cópia, troca por texto dd/mm/aaaa como na tela
+      onclone: function (doc) {
+        $$('input[type=date]', doc).forEach(function (inp) {
+          var v = inp.value;
+          inp.type = 'text';
+          inp.value = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').reverse().join('/') : '';
+        });
+      }
+    });
+    download(slug(state.title) + (all ? '-completo' : '') + '.png', canvas.toDataURL('image/png'));
+    toast('Imagem gerada.');
+  } catch (e) {
+    toast('Falha ao gerar a imagem.');
+  } finally {
+    if (prevMode !== 'preview') { ui.mode = prevMode; ui.selected = prevSel; render(); window.scrollTo(0, y); }
+  }
+}
+
+function toast(msg) {
+  var t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(function () { t.classList.remove('show'); }, 3000);
+}
+
+// ---------- Eventos ----------
+document.addEventListener('click', function (e) {
+  var t = e.target;
+  var mode = t.closest('[data-mode]');
+  if (mode) return setMode(mode.dataset.mode);
+  var act = t.closest('[data-action]');
+  if (act) {
+    var a = act.dataset.action;
+    if (a === 'png') downloadPNG();
+    else if (a === 'export') exportJSON();
+    else if (a === 'import') $('#importFile').click();
+    else if (a === 'new' && confirm('Começar um formulário novo? O atual será substituído.')) { state = blankState(); ui.selected = null; render(); }
+    else if (a === 'example' && confirm('Carregar o exemplo "Liberação de Acessos"? O formulário atual será substituído.')) { state = exampleState(); ui.selected = null; render(); }
+    return;
+  }
+  if (t.closest('[data-close]') || t.id === 'modal') { $('#modal').classList.remove('show'); return; }
+  if (t.closest('[data-add-section]')) return addSection();
+  var pal = t.closest('#palette .pal-item[data-type]');
+  if (pal) return addField(pal.dataset.type, currentSectionId());
+  var pact = t.closest('[data-pact]');
+  if (pact) {
+    var id = ui.selected && ui.selected.id;
+    if (pact.dataset.pact === 'del') deleteField(id);
+    else if (pact.dataset.pact === 'dup') duplicateField(id);
+    else if (pact.dataset.pact === 'delsec') deleteSection(id);
+    return;
+  }
+});
+
+$('#formRoot').addEventListener('click', function (e) {
+  var t = e.target;
+  if (ui.mode === 'preview') {
+    var pick = t.closest('[data-pick]'), clr = t.closest('[data-clear]');
+    if (pick || clr) {
+      var inp = t.closest('.input-group').querySelector('input');
+      if (pick) { try { inp.showPicker(); } catch (err) { inp.focus(); } }
+      else { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
+    return;
+  }
+  var tool = t.closest('[data-act]');
+  if (tool) {
+    var fid = tool.closest('.fc-field').dataset.fid;
+    return tool.dataset.act === 'del' ? deleteField(fid) : duplicateField(fid);
+  }
+  var sact = t.closest('[data-sact]');
+  if (sact) return deleteSection(sact.closest('.fc-section').dataset.sid);
+  var field = t.closest('.fc-field');
+  if (field) { ui.selected = { kind: 'field', id: field.dataset.fid }; return refreshSelection(); }
+  var head = t.closest('.card-header');
+  if (head) { ui.selected = { kind: 'section', id: head.closest('.fc-section').dataset.sid }; return refreshSelection(); }
+  if (!t.closest('[contenteditable]')) { ui.selected = null; refreshSelection(); }
+});
+
+function refreshSelection() {
+  $$('#formRoot .selected').forEach(function (el) { el.classList.remove('selected'); });
+  if (ui.selected) {
+    var sel = ui.selected.kind === 'field' ? '.fc-field[data-fid="' + ui.selected.id + '"]' : '.fc-section[data-sid="' + ui.selected.id + '"]';
+    var el = $('#formRoot ' + sel);
+    if (el) el.classList.add('selected');
+  }
+  renderProps();
+}
+
+$('#formRoot').addEventListener('input', function (e) {
+  var t = e.target;
+  if (ui.mode === 'edit') {
+    if (t.id === 'formTitle') { state.title = t.textContent.trim(); $('#titleInput').value = state.title; save(); }
+    else if (t.classList.contains('sec-name')) {
+      findSection(t.closest('.fc-section').dataset.sid).name = t.textContent.trim();
+      save();
+    }
+    return;
+  }
+  if (t.dataset.mask) applyMask(t);
+  if (t.classList.contains('date-input')) t.classList.toggle('empty', !t.value);
+  var w = t.closest('.fc-field');
+  if (w) w.classList.remove('invalid');
+  applyConditions();
+});
+$('#formRoot').addEventListener('change', function (e) {
+  if (ui.mode === 'preview') {
+    var w = e.target.closest('.fc-field');
+    if (w) w.classList.remove('invalid');
+    applyConditions();
+  }
+});
+$('#formRoot').addEventListener('focusout', function (e) {
+  if (e.target.classList && e.target.classList.contains('sec-name')) renderProps();
+});
+$('#formRoot').addEventListener('keydown', function (e) {
+  if (e.target.isContentEditable && e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+});
+$('#formRoot').addEventListener('submit', function (e) {
+  e.preventDefault();
+  if (ui.mode === 'preview') submitForm();
+});
+
+$('#props').addEventListener('input', onPropChange);
+$('#props').addEventListener('change', onPropChange);
+
+$('#titleInput').addEventListener('input', function () {
+  state.title = this.value;
+  var ft = $('#formTitle');
+  if (ft) ft.textContent = state.title;
+  save();
+});
+['#showRules', '#showRules2'].forEach(function (s) {
+  $(s).addEventListener('change', function () { ui.showRules = this.checked; render(); });
+});
+['#expand', '#expand2'].forEach(function (s) {
+  $(s).addEventListener('change', function () { ui.expand = this.checked; render(); });
+});
+$('#importFile').addEventListener('change', function () {
+  if (this.files[0]) importJSON(this.files[0]);
+  this.value = '';
+});
+
+renderPalette();
+render();
+</script>
+</body>
+</html>

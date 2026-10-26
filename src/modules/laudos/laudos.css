@@ -1,0 +1,170 @@
+.a4-landscape-preview-wrapper {
+    background-color: var(--surface-2);
+    padding: 2rem;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    display: flex;
+    justify-content: center;
+    overflow-x: auto;
+}
+
+.a4-landscape-page {
+    width: 1000px;
+    height: 707px;
+    flex-shrink: 0;
+    background-color: #ffffff;
+    color: #000000;
+    box-shadow: 0 12px 32px -8px rgba(16,24,40,.28);
+    padding: 40px;
+    position: relative;
+    font-family: Arial, Helvetica, sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transform-origin: top center;
+    box-sizing: border-box;
+}
+
+.a4-landscape-page td {
+    color: #000000;
+    background: none;
+}
+
+.pdf-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    height: 65px;
+    padding-bottom: 5px;
+    background: none;
+    border: none;
+    position: relative;
+    top: auto;
+    z-index: auto;
+}
+
+.pdf-logo {
+    height: 48px;
+    max-width: 200px;
+    object-fit: contain;
+}
+
+.pdf-meta-right {
+    text-align: right;
+    font-size: 8px;
+    color: #444;
+    margin-bottom: 8px;
+}
+
+.pdf-meta-right .doc-code {
+    font-weight: bold;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+}
+
+.pdf-meta-right .doc-number {
+    font-size: 20px;
+    font-weight: bold;
+    color: #000000;
+    background-color: #f1f5f9;
+    border: 1.5px solid #000000;
+    padding: 2px 20px;
+    margin-top: 2px;
+    display: inline-block;
+    line-height: 1.2;
+}
+
+.pdf-title-container {
+    text-align: center;
+    margin-top: 0px;
+    position: relative;
+    border-bottom: 2px solid #000000;
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+}
+
+.pdf-title {
+    font-size: 20px;
+    font-weight: bold;
+    color: #000000;
+}
+
+.pdf-date {
+    font-size: 7.5px;
+    color: #000000;
+    position: absolute;
+    right: 0;
+    top: 4px;
+}
+
+.pdf-body-text {
+    font-size: 9.5px;
+    line-height: 1.5;
+    color: #000000;
+    margin: 14px 0;
+    text-align: justify;
+    text-justify: inter-word;
+    word-break: normal;
+}
+
+.pdf-table-container {
+    flex-grow: 1;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.pdf-table {
+    width: 100%;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse;
+}
+
+.pdf-table th {
+    background-color: #f1f5f9;
+    color: #000000;
+    font-weight: bold;
+    border: 1px solid #000000;
+    padding: 5px 3px;
+    text-align: center;
+    font-size: 8px;
+}
+
+.pdf-table td {
+    border: 1px solid #000000;
+    padding: 4px 3px;
+    text-align: center;
+    font-size: 7.5px;
+    color: #000000;
+}
+
+.pdf-footer-banner {
+    height: 40px;
+    width: 100%;
+    margin-top: 2px;
+}
+
+/* ---------- tela do gerador (canivete) ---------- */
+.ld-steps{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.ld-steps>*{min-width:0}
+.a4-landscape-preview-wrapper{display:block!important;overflow:hidden!important;padding:16px!important}
+.a4-scale{margin:0 auto;position:relative}
+.a4-scale .a4-landscape-page{position:absolute;left:0;top:0;transform-origin:top left}
+.ld-n{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;margin-right:4px}
+.ld-grid{display:grid;grid-template-columns:150px 140px minmax(0,2fr) minmax(0,1fr);gap:14px}
+@media (max-width:960px){.ld-grid{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){.ld-grid{grid-template-columns:1fr}}
+.ld-drops{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.ld-drops{grid-template-columns:1fr}}
+.ld-files{display:flex;flex-wrap:wrap;gap:8px}
+.ld-file{display:inline-flex;align-items:center;gap:8px;max-width:320px;height:34px;padding:0 2px 0 8px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);font-size:12.5px}
+.ld-table td{padding:6px 8px;vertical-align:top}
+.ld-table tr.ld-main td{border-bottom:0;padding-top:10px}
+.ld-table tr.ld-links td{background:var(--surface-2);padding:7px 8px 9px}
+.ld-cell{height:32px;font-size:12.5px;padding:0 9px}
+select.ld-cell{padding-right:26px;background-position:right 8px center}
+.ld-stack{display:grid;gap:4px}
+.ld-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:32px}
+.ld-binds{display:grid;gap:6px}
+.ld-binds label{display:grid;grid-template-columns:70px minmax(0,1fr);align-items:center;gap:8px;font-size:12px;color:var(--muted);font-weight:600}
+input:disabled.input,textarea:disabled.input{opacity:.55;cursor:not-allowed;background:var(--surface-2)}

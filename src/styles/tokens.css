@@ -1,0 +1,52 @@
+/* Tokens do Canivete CRC — paleta teal Low Cost, claro/escuro.
+   Escuro vale por prefers-color-scheme ou por [data-theme="dark"] (escolha salva em localStorage 'tema'). */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f2f4f7; --surface-3:#e8ecf1; --line:#e4e7ec; --line-2:#d0d5dd;
+  --text:#101828; --text-2:#344054; --muted:#667085;
+  --accent:#1f7590; --accent-hover:#19637a; --accent-ink:#ffffff; --accent-soft:#e6f3f6; --accent-line:#b4d9e3;
+  --ok:#237a5c; --ok-soft:#e5f4ee; --ok-cell:#369474;
+  --warn:#b54708; --warn-soft:#fef3e2;
+  --bad:#c01048; --bad-soft:#fdecf2;
+  --res:#6941c6; --res-soft:#f1ecfd;
+  --info:#2563c9; --info-soft:#e8f0fc;
+  --free-cell:#ffffff; --logo-l:block; --logo-d:none;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.05);
+  --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  --shadow-lg:0 20px 48px -12px rgba(16,24,40,.25);
+  --scrim:rgba(16,24,40,.42);
+  /* série categórica dos gráficos (ordem fixa) */
+  --c1:#1f7590; --c2:#369474; --c3:#d08a16; --c4:#c01048; --c5:#6941c6; --c6:#2563c9; --c7:#0e9fb0; --c8:#7a8699;
+  --grid:rgba(16,24,40,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b0f15; --surface:#131921; --surface-2:#19212b; --surface-3:#212b37; --line:#232d3a; --line-2:#334155;
+    --text:#e8edf4; --text-2:#c2ccd8; --muted:#8693a6;
+    --accent:#5db4cf; --accent-hover:#7cc4da; --accent-ink:#06141a; --accent-soft:rgba(93,180,207,.13); --accent-line:rgba(93,180,207,.38);
+    --ok:#5bc49c; --ok-soft:rgba(91,196,156,.12); --ok-cell:#3a9e7c;
+    --warn:#f5b04a; --warn-soft:rgba(245,176,74,.12);
+    --bad:#ff6b8f; --bad-soft:rgba(255,107,143,.12);
+    --res:#b39cff; --res-soft:rgba(179,156,255,.14);
+    --info:#7aa7f5; --info-soft:rgba(122,167,245,.13);
+    --free-cell:#131921; --logo-l:none; --logo-d:block;
+    --shadow-sm:none; --shadow:0 1px 2px rgba(0,0,0,.35); --shadow-lg:0 24px 60px -12px rgba(0,0,0,.6);
+    --scrim:rgba(0,0,0,.55);
+    --c1:#5db4cf; --c2:#5bc49c; --c3:#f5b04a; --c4:#ff6b8f; --c5:#b39cff; --c6:#7aa7f5; --c7:#4fd1de; --c8:#94a3b8;
+    --grid:rgba(255,255,255,.07);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b0f15; --surface:#131921; --surface-2:#19212b; --surface-3:#212b37; --line:#232d3a; --line-2:#334155;
+  --text:#e8edf4; --text-2:#c2ccd8; --muted:#8693a6;
+  --accent:#5db4cf; --accent-hover:#7cc4da; --accent-ink:#06141a; --accent-soft:rgba(93,180,207,.13); --accent-line:rgba(93,180,207,.38);
+  --ok:#5bc49c; --ok-soft:rgba(91,196,156,.12); --ok-cell:#3a9e7c;
+  --warn:#f5b04a; --warn-soft:rgba(245,176,74,.12);
+  --bad:#ff6b8f; --bad-soft:rgba(255,107,143,.12);
+  --res:#b39cff; --res-soft:rgba(179,156,255,.14);
+  --info:#7aa7f5; --info-soft:rgba(122,167,245,.13);
+  --free-cell:#131921; --logo-l:none; --logo-d:block;
+  --shadow-sm:none; --shadow:0 1px 2px rgba(0,0,0,.35); --shadow-lg:0 24px 60px -12px rgba(0,0,0,.6);
+  --scrim:rgba(0,0,0,.55);
+  --c1:#5db4cf; --c2:#5bc49c; --c3:#f5b04a; --c4:#ff6b8f; --c5:#b39cff; --c6:#7aa7f5; --c7:#4fd1de; --c8:#94a3b8;
+  --grid:rgba(255,255,255,.07);
+}
