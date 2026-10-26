@@ -726,8 +726,8 @@ function vRecBody(){
   const allOn = pg.length && pg.every(s => SEL.has(s.id));
   $('#rbody').innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
     <th style="width:40px">${ed ? `<input type="checkbox" title="Selecionar página" ${allOn?'checked':''} onchange="LIC.selPage(this.checked)">` : ''}</th><th>Cliente</th><th>Hostname</th><th class="hide-sm">Conta</th><th>Ativada em</th><th>Idade</th></tr></thead><tbody>
-  ${pg.map(s => `<tr class="${SEL.has(s.id)?'sel':''} ${ed?'click':''}" ${ed ? `onclick="if(event.target.tagName!=='INPUT')LIC.selOne(${s.id})"` : ''}>
-    <td>${ed ? `<input type="checkbox" ${SEL.has(s.id)?'checked':''} onchange="LIC.selOne(${s.id})">` : ''}</td><td class="strong">${esc(s.cli)}</td><td class="mono">${esc(s.host)||'<span class="muted">—</span>'}</td>
+  ${pg.map(s => `<tr class="click ${SEL.has(s.id)?'sel':''}" onclick="LIC.openAccount(${s.a.id})">
+    <td onclick="event.stopPropagation()">${ed ? `<input type="checkbox" ${SEL.has(s.id)?'checked':''} onchange="LIC.selOne(${s.id})">` : ''}</td><td class="strong">${esc(s.cli)}</td><td class="mono">${esc(s.host)||'<span class="muted">—</span>'}</td>
     <td class="mono small hide-sm nowrap">${slotRef(s)}</td><td class="nowrap">${dateTag(s)}</td><td><span class="badge ${ageDays(s.data) >= 365 ? 'b-warn' : ''}">${ageTxt(ageDays(s.data))}</span></td></tr>`).join('')
     || `<tr><td colspan="6">${emptyBox('rec','Nenhuma ativação neste filtro','Diminua a idade mínima ou limpe a busca.')}</td></tr>`}
   </tbody></table></div>${pager(L.length, RV.page, PAGE, 'rPage')}</div>`;
