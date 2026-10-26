@@ -717,7 +717,7 @@ function vQualBody(){
    HISTÓRICO
    ===================================================================== */
 const HV = {q:'', acao:'', page:0};
-const ACOES = ['Máquina ativada','Máquina editada','Vaga liberada','Reciclagem (liberada)','Senha visualizada','Senha da conta alterada','Conta criada','Vaga reservada','Reserva retirada','Conta excluída','Usuário criado','Senha de usuário redefinida','Datas confirmadas'];
+const ACOES = ['Máquina ativada','Máquina editada','Vaga liberada','Reciclagem (liberada)','Senha visualizada','Senha da conta alterada','Conta criada','Vaga reservada','Reserva retirada','Conta excluída','Usuário criado','Senha de usuário redefinida','Datas confirmadas','Base de equipamentos atualizada'];
 function vHistorico(){
   $('#view').innerHTML = pageHead('Histórico', 'Tudo o que foi feito na ferramenta: quem, o quê e quando.') + `
   <div class="toolbar">

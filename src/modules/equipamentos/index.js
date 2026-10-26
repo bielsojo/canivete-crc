@@ -1,8 +1,13 @@
-/* Buscador de equipamentos — inventário de ativos carregado de planilha (XLSX/XLS/CSV).
-   Os dados ficam só neste navegador (IndexedDB). Duplo clique numa célula copia o valor. */
+/* Buscador de equipamentos — inventário de ativos.
+   A base é única e compartilhada (Supabase): todos com acesso consultam; só administrador
+   publica uma planilha nova (XLSX/XLS/CSV). Duplo clique numa célula copia o valor. */
 import * as XLSX from 'xlsx';
+import { sb, rpc, fetchAll } from '../../core/supabase.js';
 import { dbStore } from '../../core/db.js';
-import { $, $$, ic, esc, nf, norm, plural, toast, copy, ask, progress, pageHead, emptyBox, pagerNums, dropzone } from '../../core/ui.js';
+import { $, $$, ic, esc, nf, norm, plural, relTime, errMsg, toast, copy, ask, busy, progress, pageHead, emptyBox, pagerNums, dropzone } from '../../core/ui.js';
+
+let ctx = null;
+const isAdmin = () => !!ctx && ctx.isAdmin();
 
 const PAGE_SIZE = 50;
 const COLS = ['Cliente', 'Localidade', 'Modelo', 'Serial', 'Status', 'Idade do Equipamento', 'Numerador', 'Data de Compra', 'Classificação', 'Classificação Lab'];
@@ -28,49 +33,88 @@ function normalizeRows(data){
     return o;
   });
 }
-function setRows(rows, filename, dateStr){
-  E.raw = normalizeRows(rows); E.loaded = true; E.base = {filename, dateStr}; E.page = 1;
+function setRows(rows, base){
+  E.raw = rows; E.loaded = true; E.base = base; E.page = 1;
   E.status = {}; [...new Set(E.raw.map(r => String(r.Status || '').trim()))].filter(Boolean).sort().forEach(s => E.status[s] = true);
 }
+
+/* ---------- base compartilhada no Supabase ----------
+   equip_base guarda qual lote é o oficial; equip_itens guarda as linhas (jsonb).
+   O IndexedDB só serve de cache: se o lote não mudou, não baixa tudo de novo. */
+const CHUNK = 2000;
+async function fetchBase(){
+  const {data, error} = await sb.from('equip_base').select('lote,arquivo,total,atualizado_em,atualizado_por_nome').eq('id', 1).maybeSingle();
+  if (error) throw error;
+  return data && data.lote ? data : null;
+}
+async function loadShared(force){
+  const base = await fetchBase();
+  if (!base){ E.raw = []; E.loaded = false; E.base = null; E.checked = Date.now(); return; }
+  if (!force && E.loaded && E.base && E.base.lote === base.lote){ E.base = base; E.checked = Date.now(); return; }
+  try {
+    const c = await dbStore.get('equipamentos');
+    if (!force && c && c.filename === base.lote && c.data && c.data.length){ setRows(c.data, base); E.checked = Date.now(); return; }
+  } catch(e){ console.error('IndexedDB equipamentos:', e); }
+  const rows = await fetchAll((a, b) => sb.from('equip_itens').select('dados').eq('lote', base.lote).order('id').range(a, b));
+  setRows(rows.map(r => r.dados), base);
+  E.checked = Date.now();
+  dbStore.save('equipamentos', base.lote, base.atualizado_em, E.raw).catch(e => console.error('IndexedDB equipamentos:', e));
+}
+// Só administrador: lê a planilha, confirma e publica para todos.
 function loadFile(file){
-  progress(true, 'Lendo a planilha de equipamentos', file.name, 30);
+  progress(true, 'Lendo a planilha de equipamentos', file.name, 15);
   const reader = new FileReader();
-  reader.onload = evt => {
+  reader.onload = async evt => {
+    let rows;
     try {
       const wb = XLSX.read(new Uint8Array(evt.target.result), {type:'array', cellDates:true});
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      rows = normalizeRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''}));
       if (!rows.length) throw new Error('A planilha está vazia.');
-      setRows(rows, file.name, new Date().toLocaleString('pt-BR'));
-      dbStore.save('equipamentos', E.base.filename, E.base.dateStr, E.raw).catch(e => console.error('IndexedDB equipamentos:', e));
-      toast(`${nf(E.raw.length)} equipamentos carregados`);
-      draw();
-    } catch(err){ console.error(err); toast('Erro ao ler planilha: ' + err.message, 'err'); }
-    finally { progress(false); }
+    } catch(err){ progress(false); console.error(err); toast('Erro ao ler planilha: ' + err.message, 'err'); return; }
+    progress(false);
+    const atual = E.base ? `A base atual (<b>${esc(E.base.arquivo)}</b>, ${nf(E.base.total)} equipamentos) será substituída.` : 'Ainda não existe base publicada.';
+    if (!await ask('Publicar nova base de equipamentos?', `<b>${nf(rows.length)}</b> equipamentos de <b>${esc(file.name)}</b> ficarão disponíveis para todos os usuários do canivete. ${atual}`, 'Publicar para todos')) return;
+    await publish(rows, file.name);
   };
   reader.readAsArrayBuffer(file);
 }
-async function loadCache(){
+async function publish(rows, filename){
+  const lote = crypto.randomUUID();
   try {
-    const c = await dbStore.get('equipamentos');
-    if (c && c.data && c.data.length) setRows(c.data, c.filename, c.dateStr);
-  } catch(e){ console.error('IndexedDB equipamentos:', e); }
+    for (let i = 0; i < rows.length; i += CHUNK){
+      progress(true, 'Publicando a base de equipamentos', `Enviando ${nf(Math.min(i + CHUNK, rows.length))} de ${nf(rows.length)}…`, Math.round(i / rows.length * 90));
+      await rpc('equip_carregar', {p_lote:lote, p_linhas:rows.slice(i, i + CHUNK)});
+    }
+    progress(true, 'Publicando a base de equipamentos', 'Trocando a base para todos…', 95);
+    const n = await rpc('equip_publicar', {p_lote:lote, p_arquivo:filename});
+    await loadShared(true);
+    toast(`Base publicada: ${nf(n)} equipamentos`);
+    draw();
+  } catch(e){
+    console.error(e);
+    toast('Não foi possível publicar: ' + (/equip_carregar|equip_publicar|function/i.test(e.message || '') ? 'a base de equipamentos ainda não foi criada no Supabase (rode o 07_equipamentos.sql).' : errMsg(e)), 'err');
+  } finally { progress(false); }
 }
 export async function equipResumo(){
-  if (!E.loaded) await loadCache();
+  if (!E.loaded || Date.now() - (E.checked || 0) > 60000) await loadShared().catch(() => {});
   return E.loaded ? {total:E.raw.length, base:E.base} : null;
 }
 
 function draw(){
   const el = E.el; if (!el) return;
   if (!E.loaded){
-    el.innerHTML = pageHead('Equipamentos', 'Busque e filtre o inventário de ativos. Carregue a planilha para começar.') + `
-      <button class="drop big" id="edrop">${ic('sheet')}<b>Solte aqui a planilha de equipamentos ou clique para escolher</b><span class="small">.xlsx, .xls ou .csv · colunas Cliente, Localidade, Modelo, Serial, Status… Os dados ficam só neste navegador.</span></button>
-      <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>`;
-    dropzone($('#edrop'), $('#efile'), f => loadFile(f[0]));
+    el.innerHTML = pageHead('Equipamentos', 'Busque e filtre o inventário de ativos.') + (isAdmin() ? `
+      <button class="drop big" id="edrop">${ic('sheet')}<b>Solte aqui a planilha de equipamentos ou clique para escolher</b><span class="small">.xlsx, .xls ou .csv · colunas Cliente, Localidade, Modelo, Serial, Status… A base fica disponível para todos os usuários do canivete.</span></button>
+      <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>`
+      : `<div class="card">${emptyBox('box', 'Nenhuma base de equipamentos publicada', 'Um administrador precisa carregar a planilha de equipamentos.')}</div>`);
+    if (isAdmin()) dropzone($('#edrop'), $('#efile'), f => loadFile(f[0]));
     return;
   }
-  el.innerHTML = pageHead('Equipamentos', `${plural(E.raw.length, 'equipamento')} · base <b>${esc(E.base.filename)}</b> (${esc(E.base.dateStr)})`,
-    `<button class="btn" id="eup">${ic('up','sm')} Carregar planilha</button><button class="btn" id="eexp">${ic('dl','sm')} Exportar XLSX</button><button class="btn ghost" id="eclr" title="Apaga a planilha salva neste navegador">${ic('trash','sm')} Limpar dados</button>`) + `
+  const b = E.base, quando = b.atualizado_em ? `${new Date(b.atualizado_em).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'})} (${relTime(b.atualizado_em)})` : '';
+  el.innerHTML = pageHead('Equipamentos', `${nf(E.raw.length)} ${E.raw.length === 1 ? 'equipamento' : 'equipamentos'} · base <b>${esc(b.arquivo)}</b>, atualizada em ${quando}${b.atualizado_por_nome ? ` por ${esc(b.atualizado_por_nome)}` : ''}`,
+    (isAdmin() ? `<button class="btn primary" id="eup" title="Substitui a base para todos os usuários">${ic('up','sm')} Atualizar base</button>` : '') +
+    `<button class="btn" id="eexp">${ic('dl','sm')} Exportar XLSX</button>`) + `
+    ${isAdmin() ? '' : `<div class="small muted" style="margin:-8px 0 14px;display:flex;gap:6px;align-items:center">${ic('lock','sm')} Base compartilhada: só administradores podem atualizá-la.</div>`}
     <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>
     <div class="toolbar">
       <div class="searchbox">${ic('search','sm')}<input class="input" type="search" id="eq" placeholder="Modelo, cliente, serial, localidade… (vários termos)" value="${esc(E.q)}"></div>
@@ -85,13 +129,11 @@ function draw(){
       <div class="tbl-scroll"><table><thead><tr id="eth"></tr></thead><tbody id="etb"></tbody></table></div>
       <div id="epg"></div>
     </div>`;
-  $('#eup').onclick = () => $('#efile').click();
-  $('#efile').onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; };
+  if (isAdmin()){
+    $('#eup').onclick = () => $('#efile').click();
+    $('#efile').onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; };
+  }
   $('#eexp').onclick = exportXlsx;
-  $('#eclr').onclick = async () => {
-    if (!await ask('Limpar planilha de equipamentos?', 'A planilha salva neste navegador será apagada. Você pode carregá-la de novo depois.', 'Limpar', 'bad')) return;
-    await dbStore.clear('equipamentos'); E.raw = []; E.loaded = false; E.base = null; draw();
-  };
   $('#eq').addEventListener('input', e => { E.q = e.target.value; E.page = 1; apply(); });
   $('#efunc').onchange = e => { E.func = e.target.checked; E.page = 1; apply(); };
   // menus suspensos
@@ -164,9 +206,28 @@ function exportXlsx(){
 const closeMenus = () => { if (E.el) $$('.dd', E.el).forEach(d => d.classList.remove('open')); };
 
 export default {
-  async mount(el){
-    E.el = el;
-    if (!E.loaded){ el.innerHTML = '<div class="skel" style="height:320px"></div>'; await loadCache(); }
+  async mount(el, c){
+    ctx = c; E.el = el;
+    if (!E.loaded) el.innerHTML = '<div class="skel" style="height:320px"></div>';
+    try { await loadShared(); }
+    catch(e){
+      console.error(e);
+      if (!E.loaded){
+        const semTabela = /equip_base|schema cache|does not exist/i.test(e.message || '');
+        el.innerHTML = pageHead('Equipamentos', 'Busque e filtre o inventário de ativos.') + `<div class="alert err">${ic('alert')}<span>${semTabela
+          ? 'A base de equipamentos ainda não foi criada no Supabase. Um administrador precisa rodar o arquivo <b>07_equipamentos.sql</b> no SQL Editor.'
+          : 'Não foi possível carregar a base: ' + esc(errMsg(e))}</span></div>`;
+        return;
+      }
+      toast('Não foi possível atualizar a base: ' + errMsg(e), 'err');
+    }
+    if (E.el !== el) return;
+    ctx.setTopbar(`<button class="ibtn" title="Buscar atualização da base" id="eref">${ic('refresh')}</button>`);
+    $('#eref').onclick = e => busy(e.currentTarget, async () => {
+      const lote = E.base && E.base.lote;
+      try { await loadShared(); toast(E.base && E.base.lote !== lote ? 'Base atualizada' : 'A base já está atualizada', 'info'); draw(); }
+      catch(err){ toast(errMsg(err), 'err'); }
+    });
     draw();
     document.addEventListener('click', closeMenus);
     window.addEventListener('canivete:esc', closeMenus);
