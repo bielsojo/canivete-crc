@@ -251,6 +251,7 @@ function contasFilter(a, f){
 function vContas(){
   const chips = [['todas','Todas'],['vaga','Com vaga'],['cheia','Cheias'],['reservada','Com reservadas']];
   $('#view').innerHTML = pageHead('Contas', 'Cada conta de e-mail comporta até 5 máquinas. Clique em uma conta para ver a senha e as vagas.',
+    `<button class="btn" onclick="LIC.verificarSerial()">${ic('search')} Verificar serial</button> ` +
     (isAdmin() ? `<button class="btn" onclick="LIC.perfisLote()">${ic('users')} Visibilidade em lote</button> ` : '') +
     (canEdit() ? `<button class="btn" onclick="LIC.newAccountForm()">${ic('plus')} Nova conta</button>` : '')) + `
   <div class="toolbar">
@@ -283,6 +284,38 @@ function vContasBody(){
     </tbody></table></div><div class="pager"><span>${plural(L.length,'conta')} de ${S.accounts.length}</span></div></div>`;
   }
 }
+/* ---------- verificador de serial ----------
+   Procura o serial em todas as contas pelo banco (RPC verificar_serial, inclui as que o perfil não vê).
+   Sem a RPC (12_verificar_serial.sql não rodado), procura só nas contas carregadas e avisa. */
+function verificarSerial(){
+  const m = modal({title:'Verificar serial', sub:'Procura em todas as contas, inclusive as de outros perfis', icon:'search', body:`<div class="form">
+    <div style="display:flex;gap:8px"><input class="input mono grow" id="vsq" placeholder="Serial do equipamento" autocomplete="off" spellcheck="false"
+      onkeydown="if(event.key==='Enter')LIC.$('#vsok').click()"><button class="btn primary" id="vsok">${ic('search','sm')} Verificar</button></div>
+    <div id="vsr"></div></div>`, foot:`<button class="btn" onclick="LIC.closeModal()">Fechar</button>`});
+  $('#vsok', m).onclick = e => busy(e.currentTarget, async () => {
+    const sr = $('#vsq').value.trim().toUpperCase(), out = $('#vsr');
+    if (!sr){ out.innerHTML = `<div class="alert err">${ic('alert')}<span>Informe o serial.</span></div>`; return; }
+    let rows, aviso = '';
+    try { rows = await rpc('verificar_serial', {p_serial:sr}); }
+    catch(err){
+      if (!/verificar_serial|schema cache|does not exist/i.test(errMsg(err))){ out.innerHTML = `<div class="alert err">${ic('alert')}<span>${esc(errMsg(err))}</span></div>`; return; }
+      aviso = `<div class="alert warn">${ic('alert')}<span>Verificação só nas contas que você vê. Para procurar em todas, rode o <b>12_verificar_serial.sql</b> no Supabase.</span></div>`;
+      rows = S.active.filter(s => s.serial.toUpperCase() === sr).map(s => ({conta_email:s.a.email, vaga:s.n, cliente:s.cli, hostname:s.host, data_ativacao:s.data, visivel:true}));
+    }
+    const eq = equipCliente(sr);
+    const byEmail = Object.fromEntries(S.accounts.map(a => [a.email, a.id]));
+    out.innerHTML = aviso + (rows && rows.length
+      ? `<div class="alert ${rows.length > 1 ? 'err' : 'warn'}">${ic('alert')}<span>O serial <b class="mono">${esc(sr)}</b> já está vinculado ${rows.length > 1 ? `a <b>${rows.length} vagas</b> (duplicado)` : 'a uma vaga'}.</span></div>
+        <div class="grid" style="gap:10px">${rows.map(r => { const id = r.visivel ? byEmail[r.conta_email] : null; return `<div class="slot" ${id ? `style="cursor:pointer" onclick="LIC.closeModal();LIC.openAccount(${id})"` : ''}>
+          <div class="slot-h"><span class="slot-n">${r.vaga}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(r.cliente || 'Sem cliente')}</div><div class="small muted mono trunc">${esc(r.conta_email)}</div></div>
+          ${r.visivel ? '<span class="badge b-acc dotb">Em uso</span>' : `<span class="badge b-res" title="A conta está liberada só para outros perfis">${ic('lock')}Outro perfil</span>`}</div>
+          <div class="kv"><span>Hostname</span><span class="mono">${esc(r.hostname) || '<span class="muted">—</span>'}</span><span>Ativada em</span><span>${fmt(r.data_ativacao)}</span></div></div>`; }).join('')}</div>`
+      : `<div class="alert ok">${ic('check')}<span>O serial <b class="mono">${esc(sr)}</b> não está vinculado a nenhuma conta.</span></div>`)
+      + `<div class="small muted" style="display:flex;gap:6px;align-items:center">${ic('info','sm')}${eq ? `Na base de equipamentos, o cliente deste serial é <b>${esc(eq)}</b>.` : S.equip ? 'Serial não encontrado na base de equipamentos.' : esc(S.equipErr || 'Base de equipamentos indisponível.')}</div>`;
+  });
+  setTimeout(() => $('#vsq').focus(), 50);
+}
+
 /* ---------- visibilidade por perfil (só administrador; o banco confere) ---------- */
 const perfisBadge = a => isAdmin() && a.perfis.length ? `<span class="badge" title="Visível só para: ${esc(perfisTxt(a.perfis))}">${ic('users','sm')}${esc(perfisTxt(a.perfis))}</span>` : '';
 const perfisChecks = (sel, name) => PERFIS_CONTA.map(k => `<label class="chk"><input type="checkbox" name="${name}" value="${k}" ${sel.includes(k) ? 'checked' : ''}> ${esc(PERFIL[k] || k)}</label>`).join(' ');
@@ -1037,4 +1070,4 @@ export default {
   }
 };
 
-Object.assign(LIC, {PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {verificarSerial,PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
