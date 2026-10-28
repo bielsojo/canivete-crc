@@ -26,7 +26,7 @@ export const NAV = [
   {path:'licencas/maquinas', mod:'licencas', sub:'maquinas', title:'Máquinas', icon:'pc', group:'Licenças Office', bloco:'licencas'},
   {path:'licencas/ativar', mod:'licencas', sub:'ativar', title:'Nova ativação', icon:'plusc', group:'Licenças Office', bloco:'licencas'},
   {path:'licencas/reciclar', mod:'licencas', sub:'reciclar', title:'Reciclagem', icon:'rec', group:'Licenças Office', bloco:'licencas'},
-  {path:'licencas/qualidade', mod:'licencas', sub:'qualidade', title:'Qualidade dos dados', icon:'shield', group:'Licenças Office', bloco:'licencas'},
+  {path:'licencas/qualidade', mod:'licencas', sub:'qualidade', title:'Qualidade dos dados', icon:'shield', group:'Licenças Office', bloco:'licencas', admin:true},
   {path:'licencas/historico', mod:'licencas', sub:'historico', title:'Histórico', icon:'clock', group:'Licenças Office', bloco:'licencas'},
   {path:'usuarios', mod:'usuarios', title:'Usuários', icon:'users', group:'Administração', admin:true},
   {path:'config', mod:'config', title:'Configurações', icon:'tool', group:'Administração', admin:true}
@@ -34,7 +34,7 @@ export const NAV = [
 
 // Blocos liberáveis, na ordem do menu: [{id, nome, ferramentas:[títulos]}]
 export const BLOCOS = NAV.reduce((acc, n) => {
-  if (!n.bloco) return acc;
+  if (!n.bloco || n.admin) return acc;
   let b = acc.find(x => x.id === n.bloco);
   if (!b) acc.push(b = {id:n.bloco, nome:n.group, ferramentas:[]});
   b.ferramentas.push(n.title);

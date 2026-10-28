@@ -200,10 +200,10 @@ function vPainel(){
     <div class="card"><div class="card-h"><h3>Ativações mais antigas</h3><a class="small" href="#/licencas/reciclar">Reciclagem</a></div><div class="card-b"><div class="mini">
       ${old.map(s => `<div class="mini-row" onclick="LIC.openAccount(${s.a.id})"><div class="mr-m"><div class="mr-t trunc">${esc(s.cli)}</div><div class="mr-s trunc"><span class="mono">${esc(s.host||'sem hostname')}</span> · ${slotRef(s)}</div></div><div class="right"><div class="small strong">${fmt(s.data)}</div><div class="mr-s">${ageTxt(ageDays(s.data))}</div></div></div>`).join('') || emptyBox('clock','Sem ativações com data')}
     </div></div></div>
-    <div class="card"><div class="card-h"><h3>Atenção nos dados</h3><a class="small" href="#/licencas/qualidade">Detalhes</a></div><div class="card-b">
+    ${isAdmin() ? `<div class="card"><div class="card-h"><h3>Atenção nos dados</h3><a class="small" href="#/licencas/qualidade">Detalhes</a></div><div class="card-b">
       ${[['dup','Seriais duplicados','b-bad'],['estoque','Retornou ao estoque','b-bad'],['noDate','Máquinas sem data','b-warn'],['noClient','Cliente não identificado','b-warn'],['noHost','Máquinas sem hostname','b-warn'],['noSerial','Máquinas sem serial','b-warn']]
         .map(([k,l,c]) => `<div class="check-row" onclick="LIC.QV.tab='${k}';LIC.go('qualidade')"><span>${l}</span><span class="badge ${q[k].length ? c : 'b-ok'}">${q[k].length ? q[k].length : ic('check')}</span></div>`).join('')}
-    </div></div>
+    </div></div>` : ''}
   </div>
   <div class="card" style="margin-top:16px"><div class="card-h"><h3>Atividade recente</h3><a class="small" href="#/licencas/historico">Histórico completo</a></div><div class="card-b"><div class="mini" id="recent"><div class="skel" style="height:120px"></div></div></div></div>`;
   loadRecent();
@@ -255,7 +255,7 @@ function vContasBody(){
   if (!L.length){ $('#cbody').innerHTML = `<div class="tbl-wrap">${emptyBox('search','Nenhuma conta encontrada','Tente outro termo ou filtro.')}</div>`; return; }
   if (CV.mode === 'grade'){
     $('#cbody').innerHTML = `<div class="acc-grid">${L.map(a => { const c = clis(a); return `
-      <button class="acc ${a.qs ? 'q-' + a.qs : ''}" ${a.qs ? 'title="Dados com problema: veja Qualidade dos dados"' : ''} onclick="LIC.openAccount(${a.id})">
+      <button class="acc ${a.qs ? 'q-' + a.qs : ''}" ${a.qs && isAdmin() ? 'title="Dados com problema: veja Qualidade dos dados"' : ''} onclick="LIC.openAccount(${a.id})">
         <div class="acc-top"><div style="min-width:0"><div class="acc-n mono trunc">${esc(user(a.email))}</div><div class="acc-d">${esc(domain(a.email))}</div></div><span class="small strong" style="font-variant-numeric:tabular-nums">${a.c.u}/${a.c.t}</span></div>
         ${cellsHtml(a, true)}
         <div class="acc-cli trunc">${c.length ? esc(c.slice(0,3).join(' · ')) + (c.length > 3 ? ` <span class="muted">+${c.length-3}</span>` : '') : '<span class="muted">Sem máquinas ativas</span>'}</div>
