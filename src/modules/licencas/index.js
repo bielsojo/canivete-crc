@@ -149,8 +149,14 @@ function computeDerived(){
    Se o serial aparece mais de uma vez na base, basta uma linha em operação fora do armazém. */
 const txt = v => norm(v).trim().replace(/\s+/g, ' ');
 const emOperacao = r => txt(r.Status) === 'em operacao no cliente' && txt(r.Localidade) !== 'multilog brasil armazem geral';
+// Linhas da base para um serial. Etiquetas Lenovo trazem um "S" na frente (SPE0G33QP = PE0G33QP): tenta com e sem.
+function equipRows(serial){
+  const u = String(serial || '').trim().toUpperCase();
+  if (!S.equip || !u) return null;
+  return S.equip.get(u) || S.equip.get('S' + u) || (u.length > 1 && u[0] === 'S' ? S.equip.get(u.slice(1)) : null) || null;
+}
 function retornou(s){
-  const rows = S.equip && s.serial ? S.equip.get(s.serial.trim().toUpperCase()) : null;
+  const rows = equipRows(s.serial);
   return rows && !rows.some(emOperacao) ? rows[0] : null;
 }
 async function reload(quiet){
@@ -620,7 +626,7 @@ function setClient(id, v){
 /* Cliente pelo serial: procura na base de equipamentos (prefere a linha em operação) e preenche o seletor.
    Sem resultado, avisa e deixa o cliente para ser escolhido ou digitado. */
 function equipCliente(serial){
-  const rows = S.equip && serial ? S.equip.get(serial.trim().toUpperCase()) : null;
+  const rows = equipRows(serial);
   if (!rows) return null;
   return String((rows.find(emOperacao) || rows[0]).Cliente ?? '').trim() || null;
 }
