@@ -2,6 +2,7 @@
    Regras: cada conta de e-mail tem até 5 vagas (uma por máquina); vaga ativo | disponivel | reservado.
    Toda escrita passa por RPCs do Supabase (o banco confere perfil e registra no histórico). */
 import { sb, rpc, fetchAll, callFn } from '../../core/supabase.js';
+import { PERFIL } from '../../core/shell.js';
 import { $, ic, esc, todayIso, norm, plural, nf, timeHM, relTime, errMsg, toast, copy, busy, modal, closeModal, confirmBox, pageHead, emptyBox } from '../../core/ui.js';
 
 let ctx = null;
@@ -19,6 +20,9 @@ const num = e => parseInt((String(e).match(/(\d+)@/) || [0,0])[1], 10);
 const user = e => String(e).split('@')[0];
 const domain = e => '@' + String(e).split('@')[1];
 const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+// Perfis que o admin pode escolher para ver uma conta (admin sempre vê todas). Lista vazia = todos.
+const PERFIS_CONTA = ['operador', 'logistica', 'consulta'];
+const perfisTxt = p => p && p.length ? p.map(k => PERFIL[k] || k).join(', ') : 'Todos os perfis';
 
 /* =====================================================================
    DADOS
@@ -32,13 +36,15 @@ const loadEquip = () => import('../equipamentos/index.js').then(async m => {
 }).catch(e => { console.error('Equipamentos:', e); S.eqClients = null; S.equipErr = 'Não foi possível ler a base de equipamentos: ' + errMsg(e); return null; });
 async function loadData(){
   const [contas, vagas, equip] = await Promise.all([
-    fetchAll((a,b) => sb.from('contas').select('id,email').order('id').range(a,b)),
+    // Sem a coluna "perfis" (11_contas_por_perfil.sql ainda não rodado), lê só id e e-mail.
+    fetchAll((a,b) => sb.from('contas').select('id,email,perfis').order('id').range(a,b))
+      .catch(() => fetchAll((a,b) => sb.from('contas').select('id,email').order('id').range(a,b))),
     fetchAll((a,b) => sb.from('vagas').select('id,conta_id,n,status,hostname,serial,data_ativacao,proposta,obs,atualizado_em,clientes(nome)').order('id').range(a,b)),
     loadEquip()
   ]);
   S.equip = equip;
   const by = {}, sl = {};
-  contas.forEach(c => by[c.id] = {id:c.id, email:c.email, slots:[]});
+  contas.forEach(c => by[c.id] = {id:c.id, email:c.email, perfis:c.perfis || [], slots:[]});
   vagas.forEach(v => {
     const a = by[v.conta_id]; if (!a) return;
     const s = {id:v.id, n:v.n, st:v.status, cli:v.clientes ? v.clientes.nome : '', serial:v.serial||'', host:v.hostname||'',
@@ -245,7 +251,8 @@ function contasFilter(a, f){
 function vContas(){
   const chips = [['todas','Todas'],['vaga','Com vaga'],['cheia','Cheias'],['reservada','Com reservadas']];
   $('#view').innerHTML = pageHead('Contas', 'Cada conta de e-mail comporta até 5 máquinas. Clique em uma conta para ver a senha e as vagas.',
-    canEdit() ? `<button class="btn" onclick="LIC.newAccountForm()">${ic('plus')} Nova conta</button>` : '') + `
+    (isAdmin() ? `<button class="btn" onclick="LIC.perfisLote()">${ic('users')} Visibilidade em lote</button> ` : '') +
+    (canEdit() ? `<button class="btn" onclick="LIC.newAccountForm()">${ic('plus')} Nova conta</button>` : '')) + `
   <div class="toolbar">
     <div class="searchbox">${ic('search','sm')}<input class="input" type="search" id="cq" placeholder="Buscar e-mail, cliente, hostname ou serial" value="${esc(CV.q)}" oninput="LIC.CV.q=this.value;LIC.vContasBody()"></div>
     <div class="chips" id="cchips">${chips.map(([k,l]) => `<button class="chip ${CV.f===k?'on':''}" onclick="LIC.CV.f='${k}';LIC.vContas()">${l}<span class="n">${S.accounts.filter(a => contasFilter(a,k)).length}</span></button>`).join('')}</div>
@@ -266,16 +273,69 @@ function vContasBody(){
         <div class="acc-top"><div style="min-width:0"><div class="acc-n mono trunc">${esc(user(a.email))}</div><div class="acc-d">${esc(domain(a.email))}</div></div><span class="small strong" style="font-variant-numeric:tabular-nums">${a.c.u}/${a.c.t}</span></div>
         ${cellsHtml(a, true)}
         <div class="acc-cli trunc">${c.length ? esc(c.slice(0,3).join(' · ')) + (c.length > 3 ? ` <span class="muted">+${c.length-3}</span>` : '') : '<span class="muted">Sem máquinas ativas</span>'}</div>
-        <div>${statusBadges(a.c)}</div>
+        <div>${statusBadges(a.c)} ${perfisBadge(a)}</div>
       </button>`; }).join('')}</div><div class="muted small" style="margin-top:12px">${plural(L.length,'conta')} de ${S.accounts.length}</div>`;
   } else {
     $('#cbody').innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Conta</th><th>Uso</th><th class="hide-sm">Clientes</th><th>Situação</th><th class="hide-sm">Última ativação</th></tr></thead><tbody>
     ${L.map(a => { const c = clis(a), last = a.slots.filter(s => s.data && s.st==='ativo').map(s => s.data).sort().pop(); return `
       <tr class="click ${a.qs ? 'q-' + a.qs : ''}" onclick="LIC.openAccount(${a.id})"><td class="mono">${esc(a.email)}</td><td class="nowrap">${cellsHtml(a)} <span class="small muted">${a.c.u}/${a.c.t}</span></td>
-      <td class="small hide-sm">${esc(c.slice(0,2).join(', '))}${c.length>2?` <span class="muted">+${c.length-2}</span>`:''}</td><td class="nowrap">${statusBadges(a.c)}</td><td class="hide-sm">${fmt(last)}</td></tr>`; }).join('')}
+      <td class="small hide-sm">${esc(c.slice(0,2).join(', '))}${c.length>2?` <span class="muted">+${c.length-2}</span>`:''}</td><td class="nowrap">${statusBadges(a.c)} ${perfisBadge(a)}</td><td class="hide-sm">${fmt(last)}</td></tr>`; }).join('')}
     </tbody></table></div><div class="pager"><span>${plural(L.length,'conta')} de ${S.accounts.length}</span></div></div>`;
   }
 }
+/* ---------- visibilidade por perfil (só administrador; o banco confere) ---------- */
+const perfisBadge = a => isAdmin() && a.perfis.length ? `<span class="badge" title="Visível só para: ${esc(perfisTxt(a.perfis))}">${ic('users','sm')}${esc(perfisTxt(a.perfis))}</span>` : '';
+const perfisChecks = (sel, name) => PERFIS_CONTA.map(k => `<label class="chk"><input type="checkbox" name="${name}" value="${k}" ${sel.includes(k) ? 'checked' : ''}> ${esc(PERFIL[k] || k)}</label>`).join(' ');
+const perfisLidos = (m, name) => [...m.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value);
+async function salvarPerfis(ids, perfis){
+  await rpc('definir_perfis_conta', {p_contas:ids, p_perfis:perfis});
+  await loadData(); renderView(); if (S.drawer) drawAccount();
+  toast(`Visibilidade salva em ${plural(ids.length,'conta')}: ${perfisTxt(perfis)}`);
+}
+function perfisConta(id){
+  const a = S.byId[id]; if (!a || !isAdmin()) return;
+  const m = modal({title:'Quem vê esta conta?', sub:a.email, icon:'users', body:`<div class="form">
+    <div class="small muted">Marque os perfis que podem ver a conta, as vagas e a senha. Sem nenhum marcado, todos os perfis veem. Administrador sempre vê.</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">${perfisChecks(a.perfis, 'pc1')}</div>
+    <div class="alert err hidden" id="pcerr"></div></div>`,
+    foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn primary" id="pcok">Salvar</button>`});
+  $('#pcok', m).onclick = e => busy(e.currentTarget, async () => {
+    try { await salvarPerfis([id], perfisLidos(m, 'pc1')); closeModal(); }
+    catch(err){ const x = $('#pcerr'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(errMsg(err))}</span>`; }
+  });
+}
+// Lote: escolhe os perfis e marca as contas (com busca e "marcar as filtradas").
+const PL = {q:'', sel:new Set()};
+function perfisLote(){
+  if (!isAdmin()) return;
+  PL.q = ''; PL.sel = new Set();
+  const m = modal({title:'Visibilidade das contas em lote', sub:'Substitui os perfis das contas marcadas', icon:'users', wide:true, body:`<div class="form">
+    <div class="field"><label>Visível para</label><div style="display:flex;gap:16px;flex-wrap:wrap">${perfisChecks([], 'plp')}</div>
+      <span class="help">Sem nenhum marcado, as contas voltam a ser visíveis para todos os perfis.</span></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="searchbox grow">${ic('search','sm')}<input class="input" type="search" id="plq" placeholder="Filtrar contas por e-mail ou cliente" oninput="LIC.PL.q=this.value;LIC.perfisLoteLista()"></div>
+      <button class="btn sm" onclick="LIC.perfisLoteTodas(true)">Marcar filtradas</button><button class="btn sm" onclick="LIC.perfisLoteTodas(false)">Desmarcar</button></div>
+    <div id="pll" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
+    <div class="alert err hidden" id="plerr"></div></div>`,
+    foot:`<span class="small muted grow" id="pln"></span><button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn primary" id="plok">Aplicar</button>`});
+  perfisLoteLista();
+  $('#plok', m).onclick = e => busy(e.currentTarget, async () => {
+    const er = t => { const x = $('#plerr'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
+    if (!PL.sel.size) return er('Marque ao menos uma conta.');
+    try { await salvarPerfis([...PL.sel], perfisLidos(m, 'plp')); closeModal(); }
+    catch(err){ er(errMsg(err)); }
+  });
+  setTimeout(() => $('#plq').focus(), 50);
+}
+const plFiltradas = () => { const q = norm(PL.q); return S.accounts.filter(a => !q || norm(a.email + ' ' + a.slots.map(s => s.cli).join(' ')).includes(q)); };
+function perfisLoteLista(){
+  const L = plFiltradas();
+  $('#pll').innerHTML = L.map(a => `<label class="mini-row" style="gap:10px"><input type="checkbox" ${PL.sel.has(a.id) ? 'checked' : ''} onchange="LIC.perfisLoteUm(${a.id},this.checked)">
+    <div class="mr-m"><div class="mr-t mono trunc">${esc(a.email)}</div><div class="mr-s trunc">${esc(perfisTxt(a.perfis))}</div></div></label>`).join('') || `<div class="small muted" style="padding:12px">Nenhuma conta encontrada.</div>`;
+  $('#pln').textContent = `${plural(PL.sel.size,'conta marcada','contas marcadas')}`;
+}
+function perfisLoteUm(id, on){ on ? PL.sel.add(id) : PL.sel.delete(id); $('#pln').textContent = `${plural(PL.sel.size,'conta marcada','contas marcadas')}`; }
+function perfisLoteTodas(on){ plFiltradas().forEach(a => on ? PL.sel.add(a.id) : PL.sel.delete(a.id)); perfisLoteLista(); }
+
 function newAccountForm(){
   if (!canEdit()) return;
   const next = Math.max(0, ...S.accounts.map(a => num(a.email))) + 1;
@@ -345,6 +405,10 @@ function drawAccount(){
         ${msHtml(a)}
       </div>` : ''}
       ${isAdmin() ? `<div>
+        <div class="sec-t">Visível para<button class="btn sm ghost" onclick="LIC.perfisConta(${a.id})">${ic('edit','sm')} Alterar</button></div>
+        <div class="slot"><div class="slot-h"><span class="ico">${ic('users','sm')}</span><div class="grow"><div class="strong">${esc(perfisTxt(a.perfis))}</div><div class="small muted">${a.perfis.length ? 'Outros perfis não veem esta conta nem a senha. Administrador sempre vê.' : 'Qualquer perfil com acesso a Licenças vê esta conta.'}</div></div></div></div>
+      </div>
+      <div>
         <div class="sec-t" style="color:var(--bad)">Zona de perigo</div>
         <div class="slot" style="border-color:color-mix(in srgb,var(--bad) 35%,var(--line))"><div class="slot-h"><div class="grow"><div class="strong">Excluir esta conta</div><div class="small muted">Remove a conta, as 5 vagas e a senha guardada. Não dá para desfazer.</div></div>
           <button class="btn sm danger" onclick="LIC.excluirConta(${a.id})">${ic('x','sm')} Excluir</button></div></div>
@@ -973,4 +1037,4 @@ export default {
   }
 };
 
-Object.assign(LIC, {alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});

@@ -48,8 +48,8 @@ async function vUsuarios(){
   <div class="card" style="margin-top:16px;max-width:720px"><div class="card-h"><h3>O que cada perfil pode fazer</h3></div><div class="card-b">
     <p class="small muted" style="margin:0 0 10px">As <b>áreas</b> definem quais blocos do menu cada pessoa vê; o <b>perfil</b> define o que ela pode alterar dentro deles. Quando surgir um bloco novo no site, ele aparece aqui para você liberar.</p><div class="mini">
     <div class="mini-row" style="cursor:default"><span class="badge b-res">Administrador</span><span class="small">Tudo, em todas as áreas, inclusive criar e gerenciar usuários.</span></div>
-    <div class="mini-row" style="cursor:default"><span class="badge b-acc">Operador</span><span class="small">Usa as áreas liberadas e altera licenças: ativar, editar, liberar, criar contas.</span></div>
-    <div class="mini-row" style="cursor:default"><span class="badge b-acc">Logística</span><span class="small">Como o operador, mas já nasce só com a área Licenças Office liberada.</span></div>
+    <div class="mini-row" style="cursor:default"><span class="badge b-acc">CRC</span><span class="small">Usa as áreas liberadas e altera licenças: ativar, editar, liberar, criar contas.</span></div>
+    <div class="mini-row" style="cursor:default"><span class="badge b-acc">Logística</span><span class="small">Como o CRC, mas já nasce só com a área Licenças Office liberada.</span></div>
     <div class="mini-row" style="cursor:default"><span class="badge">Consulta</span><span class="small">Usa as áreas liberadas. Nas licenças, só visualiza contas, máquinas e senhas.</span></div>
   </div></div></div>`;
 }
