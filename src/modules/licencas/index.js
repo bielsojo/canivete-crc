@@ -430,10 +430,13 @@ function cpToggle(id){
 function cpRender(id){
   const q = norm($('#' + id + '-s').value.trim()), all = clientNames();
   const hit = all.filter(n => !q || norm(n).includes(q));
+  // Cliente fora da base: o texto digitado vira a última opção ("Usar …").
+  const typed = $('#' + id + '-s').value.trim(), free = typed && !hit.some(n => norm(n).trim() === q);
   CP.items = hit.slice(0, 80); CP.on = 0;
-  $('#' + id + '-l').innerHTML = CP.items.map((n, i) => `<div class="cpick-i ${i ? '' : 'on'}" onmousedown="LIC.cpPick('${id}',${i})">${esc(n)}</div>`).join('')
+  if (free) CP.items.push(typed);
+  $('#' + id + '-l').innerHTML = CP.items.map((n, i) => `<div class="cpick-i ${i ? '' : 'on'}" onmousedown="LIC.cpPick('${id}',${i})">${free && i === CP.items.length - 1 ? `${ic('plus','sm')} Usar “${esc(n)}”` : esc(n)}</div>`).join('')
     + (hit.length > 80 ? `<div class="cpick-m">+${nf(hit.length - 80)} clientes: refine a busca</div>` : '')
-    + (hit.length ? '' : `<div class="cpick-m">Nenhum cliente encontrado na base de equipamentos</div>`);
+    + (hit.length || free ? '' : `<div class="cpick-m">Nenhum cliente encontrado. Digite o nome para usar um cliente novo.</div>`);
 }
 function cpKey(e, id){
   const n = CP.items.length;
@@ -447,10 +450,27 @@ function cpKey(e, id){
 }
 function cpPick(id, i){
   const v = CP.items[i]; if (v == null) return;
-  $('#' + id).value = v;
-  const t = $('#' + id + '-t'); t.textContent = v; t.classList.remove('muted');
-  $('#' + id + '-w .cpick-b').classList.remove('bad');
+  setClient(id, v);
   $('#' + id + '-p').classList.add('hidden');
+}
+function setClient(id, v){
+  $('#' + id).value = v;
+  const t = $('#' + id + '-t'); t.textContent = v || 'Escolha o cliente'; t.classList.toggle('muted', !v);
+  $('#' + id + '-w .cpick-b').classList.remove('bad');
+}
+/* Cliente pelo serial: procura na base de equipamentos (prefere a linha em operação) e preenche o seletor.
+   Sem resultado, avisa e deixa o cliente para ser escolhido ou digitado. */
+function equipCliente(serial){
+  const rows = S.equip && serial ? S.equip.get(serial.trim().toUpperCase()) : null;
+  if (!rows) return null;
+  return String((rows.find(emOperacao) || rows[0]).Cliente ?? '').trim() || null;
+}
+function serialCliente(inp, pickId, helpSel){
+  const sr = inp.value.trim(), h = $(helpSel); if (!h) return;
+  if (!sr){ h.className = 'help'; h.textContent = ''; return; }
+  const c = equipCliente(sr);
+  if (c){ setClient(pickId, c); h.className = 'help ok'; h.textContent = `Cliente da base de equipamentos: ${c}`; }
+  else { h.className = 'help bad'; h.textContent = S.equip ? 'Serial não encontrado na base de equipamentos. Escolha ou digite o cliente.' : (S.equipErr || 'Base de equipamentos indisponível.') + ' Escolha ou digite o cliente.'; }
 }
 document.addEventListener('mousedown', e => { if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick-p').forEach(x => x.classList.add('hidden')); });
 function serialOwner(serial, exceptId){
@@ -469,9 +489,9 @@ function slotForm(id){
   const s = S.slotById[id], edit = s.st === 'ativo';
   const m = modal({title: edit ? 'Editar máquina' : 'Ativar máquina', sub:`${s.a.email} · vaga ${s.n}`, icon: edit ? 'edit' : 'pc', body:`
     <div class="form">
-      <div class="field"><label>Cliente *</label>${clientPicker('fc', s.cli)}</div>
+      <div class="field"><label>Cliente *</label>${clientPicker('fc', s.cli)}<span class="help" id="fsc"></span></div>
       <div class="two"><div class="field"><label>Hostname</label><input class="input mono" id="fh" value="${esc(s.host)}" placeholder="ex.: LC-NOTE-042"></div>
-        <div class="field"><label>Serial</label><input class="input mono" id="fs" value="${esc(s.serial)}" oninput="LIC.checkSerial(this,${s.id},'#fsh')"><span class="help" id="fsh"></span></div></div>
+        <div class="field"><label>Serial</label><input class="input mono" id="fs" value="${esc(s.serial)}" oninput="LIC.checkSerial(this,${s.id},'#fsh')" onchange="LIC.serialCliente(this,'fc','#fsc')"><span class="help" id="fsh"></span></div></div>
       <div class="two"><div class="field"><label>Data da ativação</label><input class="input" type="date" id="fd" value="${s.data || todayIso()}" max="${todayIso()}"></div>
         <div class="field"><label>Proposta</label><input class="input" id="fp" value="${esc(s.prop)}"></div></div>
       <div class="field"><label>Observação</label><input class="input" id="fo" value="${esc(s.obs)}"></div>
@@ -568,13 +588,15 @@ function exportCsv(){
 /* =====================================================================
    NOVA ATIVAÇÃO
    ===================================================================== */
-const NA = {cli:'', qtd:1, data:'', plan:null};
+const NA = {cli:'', serial:'', qtd:1, data:'', plan:null};
 function vAtivar(){
   if (!NA.data) NA.data = todayIso();
   $('#view').innerHTML = pageHead('Nova ativação', 'Informe o cliente e quantas máquinas. A ferramenta escolhe as vagas e, se faltar espaço, sugere reciclar as ativações mais antigas.') + `
   <div class="steps"><span class="${NA.plan ? '' : 'on'}"><b>1</b>Pedido</span>${ic('arrow','sm')}<span class="${NA.plan ? 'on' : ''}"><b>2</b>Conferir e confirmar</span></div>
   <div class="card" style="max-width:860px"><div class="card-b" style="padding-top:18px">
-    <div class="form"><div style="display:grid;grid-template-columns:minmax(0,2fr) 120px 170px;gap:14px" class="na-grid">
+    <div class="form"><div class="field" style="max-width:320px"><label>Serial do equipamento</label><input class="input mono" id="as" value="${esc(NA.serial)}" placeholder="Busca o cliente na base de equipamentos" autocomplete="off"
+        oninput="LIC.NA.serial=this.value;LIC.checkSerial(this,null,'#ash')" onchange="LIC.serialCliente(this,'ac','#asc')" onkeydown="if(event.key==='Enter')this.blur()"><span class="help" id="ash"></span><span class="help" id="asc"></span></div>
+    <div style="display:grid;grid-template-columns:minmax(0,2fr) 120px 170px;gap:14px" class="na-grid">
       <div class="field"><label>Cliente *</label>${clientPicker('ac', NA.cli)}</div>
       <div class="field"><label>Máquinas</label><input class="input" type="number" id="aq" min="1" max="20" value="${NA.qtd}" onkeydown="if(event.key==='Enter')LIC.makePlan()"></div>
       <div class="field"><label>Data da ativação</label><input class="input" type="date" id="ad" value="${NA.data}" max="${todayIso()}"></div>
@@ -610,6 +632,7 @@ function makePlan(){
     S.active.slice().sort((x,y) => (x.data ? 0 : 1) - (y.data ? 0 : 1) || (x.data||'').localeCompare(y.data||''))
       .slice(0, need).forEach(s => plan.push({type:'reciclar', id:s.id, host:'', serial:''}));
   }
+  if (plan[0]) plan[0].serial = NA.serial.trim().toUpperCase();
   NA.plan = plan; NA.pw = {};
   vAtivar();
   loadPlanPws(plan);
@@ -690,7 +713,7 @@ async function confirmPlan(btn){
       const n = await rpc('ativar_lote', {p_itens:items});
       await loadData();
       const ids = items.map(i => i.vaga_id);
-      NA.plan = null; NA.pw = {}; NA.cli = ''; NA.qtd = 1;
+      NA.plan = null; NA.pw = {}; NA.cli = ''; NA.serial = ''; NA.qtd = 1;
       toast(`${plural(n || items.length,'ativação registrada','ativações registradas')}`);
       vAtivar();
       $('#plan').innerHTML = `<div class="card" style="max-width:860px;margin-top:16px"><div class="card-b" style="padding-top:18px">
@@ -882,4 +905,4 @@ export default {
   }
 };
 
-Object.assign(LIC, {ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
