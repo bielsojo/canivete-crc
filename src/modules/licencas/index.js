@@ -50,6 +50,62 @@ async function loadData(){
   accs.sort((a,b) => num(a.email) - num(b.email) || a.email.localeCompare(b.email));
   S.accounts = accs; S.byId = by; S.slotById = sl; S.loadedAt = Date.now();
   computeDerived();
+  await loadAlerts();
+}
+// Alertas de senha usada sem ativação (só administrador; sem a tabela, fica vazio).
+async function loadAlerts(){
+  if (!isAdmin()){ S.alerts = []; return; }
+  const {data, error} = await sb.from('alertas_senha').select('id,quando,usuario_nome,conta_email,justificativa').is('lido_em', null).order('quando', {ascending:false});
+  if (error) console.error('alertas_senha:', error);
+  S.alerts = data || [];
+}
+async function alertaLido(btn, id){
+  await busy(btn, async () => {
+    try { await rpc('marcar_alerta_lido', {p_id:id}); S.alerts = S.alerts.filter(x => x.id !== id); renderView(); }
+    catch(e){ toast(errMsg(e), 'err'); }
+  });
+}
+
+/* ---- Senha vista sem registrar ativação ----
+   Mostrar ou copiar a senha marca a conta como pendente; registrar uma ativação nela tira a pendência.
+   Ao sair (fechar a conta, cancelar o plano, trocar de tela) com pendência, pergunta se esqueceu de registrar.
+   Se não esqueceu, pede justificativa: vai para o histórico e para os alertas do administrador. */
+const PEND = new Map();   // conta_id -> e-mail
+const markPw = id => { const a = S.byId[id]; if (a) PEND.set(id, a.email); };
+const clearPw = ids => ids.forEach(id => PEND.delete(id));
+window.addEventListener('beforeunload', e => { if (PEND.size){ e.preventDefault(); e.returnValue = ''; } });
+function pwGuard(){
+  if (!PEND.size || $('#pgyes')) return;
+  const ids = [...PEND.keys()], emails = [...PEND.values()];
+  const m = modal({title:'Esqueceu de registrar a ativação?', icon:'alert', tone:'warn', sub:emails.join(', '), body:`<div class="form">
+    <div style="color:var(--text-2)">Você mostrou ou copiou a senha de ${emails.length > 1 ? 'contas' : 'uma conta'} e não registrou nenhuma ativação nela:
+      <ul class="small mono" style="margin:8px 0 0;padding-left:18px">${emails.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>
+    <div class="form hidden" id="pgj"><div class="field"><label>Justificativa *</label><textarea class="input" id="pgt" rows="3" placeholder="Por que a senha foi usada sem registrar uma ativação?"></textarea></div>
+      <div class="small muted" style="display:flex;gap:6px;align-items:center">${ic('info','sm')}Fica registrada no histórico e o administrador é avisado.</div>
+      <div class="alert err hidden" id="pge"></div></div>
+  </div>`, foot:`<button class="btn" id="pgno">Não, vou justificar</button><button class="btn primary" id="pgyes">Sim, registrar agora</button><button class="btn primary hidden" id="pgsend">Enviar justificativa</button>`});
+  $('#pgyes', m).onclick = () => { closeModal(); backToActivation(ids); };
+  $('#pgno', m).onclick = () => {
+    $('#pgj').classList.remove('hidden'); $('#pgno').classList.add('hidden'); $('#pgsend').classList.remove('hidden');
+    const y = $('#pgyes'); y.classList.remove('primary'); y.textContent = 'Voltar para a ativação';
+    $('#pgt').focus();
+  };
+  $('#pgsend', m).onclick = e => busy(e.currentTarget, async () => {
+    const t = $('#pgt').value.trim(), x = $('#pge');
+    const er = msg => { x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(msg)}</span>`; };
+    if (t.length < 5) return er('Escreva a justificativa.');
+    try {
+      await rpc('justificar_senha', {p_contas:ids, p_justificativa:t});
+      clearPw(ids); closeModal(); toast('Justificativa registrada. O administrador foi avisado.');
+      if (isAdmin()){ await loadAlerts(); renderView(); }
+    } catch(err){ er(errMsg(err)); }
+  });
+}
+// "Sim": volta para o plano de ativação em aberto ou para a conta, onde fica o botão Ativar.
+function backToActivation(ids){
+  if (NA.plan && NA.plan.some(p => ids.includes(S.slotById[p.id].a.id))){ if (S.view !== 'ativar' || !S.mounted) go('ativar'); return; }
+  if (S.mounted) openAccount(ids[0]);
+  else { S.reopen = ids[0]; go('contas'); }
 }
 function cnt(a){
   let u = 0, f = 0, r = 0;
@@ -127,6 +183,10 @@ function vPainel(){
   const hello = hi < 12 ? 'Bom dia' : hi < 18 ? 'Boa tarde' : 'Boa noite';
   $('#view').innerHTML = pageHead(`${hello}, ${esc(ctx.me.nome.split(' ')[0])}`, 'Resumo das licenças Office neste momento.',
     canEdit() ? `<button class="btn primary" onclick="LIC.go('ativar')">${ic('plus')} Nova ativação</button>` : '') + `
+  ${isAdmin() && S.alerts && S.alerts.length ? `<div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div class="card-h"><h3>Senhas usadas sem ativação</h3><span class="sub">${plural(S.alerts.length,'justificativa pendente','justificativas pendentes')}</span></div><div class="card-b"><div class="mini">
+    ${S.alerts.map(x => `<div class="mini-row" style="cursor:default"><div class="mr-m"><div class="small"><b>${esc(x.usuario_nome || 'Sem nome')}</b> · <span class="mono">${esc(x.conta_email)}</span></div><div class="mr-s">${esc(x.justificativa)}</div></div>
+      <span class="mr-s nowrap">${relTime(x.quando)}</span><button class="btn sm" onclick="LIC.alertaLido(this,${x.id})">${ic('check','sm')} Ciente</button></div>`).join('')}
+  </div></div></div>` : ''}
   <div class="grid kpis">
     ${kpi('key','var(--text-2)','var(--surface-2)','Contas de e-mail', nf(A.length), `${nf(T.t)} vagas no total`)}
     ${kpi('pc','var(--accent)','var(--accent-soft)','Máquinas ativas', nf(T.u), `${pct(T.u,T.t)}% da capacidade`)}
@@ -254,7 +314,7 @@ function drawAccount(){
   const a = S.byId[S.drawer]; if (!a){ closeDrawer(); return; }
   let el = $('#drawer');
   if (!el){
-    $('#layer').insertAdjacentHTML('beforeend', `<div class="scrim" id="dscrim" onclick="LIC.closeDrawer()"></div><aside class="drawer" id="drawer" role="dialog" aria-modal="true"></aside>`);
+    $('#layer').insertAdjacentHTML('beforeend', `<div class="scrim" id="dscrim" onclick="LIC.leaveDrawer()"></div><aside class="drawer" id="drawer" role="dialog" aria-modal="true"></aside>`);
     el = $('#drawer');
   }
   const c = a.c, edit = canEdit();
@@ -262,7 +322,7 @@ function drawAccount(){
     <div class="drawer-h">
       <span class="brand-mark" style="width:36px;height:36px">${ic('mail')}</span>
       <div style="min-width:0;flex:1"><div class="mono strong trunc" style="font-size:14.5px">${esc(a.email)}</div><div class="small muted">${c.u} em uso · ${plural(c.f,'livre')}${c.r ? ` · ${c.r} reservada${c.r>1?'s':''}` : ''}</div></div>
-      <button class="ibtn" onclick="LIC.closeDrawer()" title="Fechar (Esc)">${ic('x')}</button>
+      <button class="ibtn" onclick="LIC.leaveDrawer()" title="Fechar (Esc)">${ic('x')}</button>
     </div>
     <div class="drawer-b">
       <div>
@@ -358,6 +418,7 @@ function msHtml(a){
       : `<div class="small muted">Nenhum dispositivo registrado no Entra com esta conta.</div>`}</div>
     <div class="small muted" style="margin-top:8px;display:flex;gap:6px;align-items:center">${ic('info','sm')}Consultado ${relTime(d.consultado_em)}. A lista "Microsoft Office" do admin center pode ter máquinas que não aparecem no Entra.</div>`;
 }
+function leaveDrawer(){ closeDrawer(); pwGuard(); }
 function closeDrawer(){
   clearTimeout(PW.timer); PW = {on:false, txt:null, timer:null};
   S.drawer = null;
@@ -371,10 +432,11 @@ async function togglePw(btn){
   clearTimeout(PW.timer);
   if (PW.on){ PW = {on:false, txt:null, timer:null}; drawAccount(); return; }
   const t = await busy(btn, fetchPw); if (t === null) return;
+  markPw(S.drawer);
   PW = {on:true, txt:t, timer:setTimeout(() => { if (PW.on && S.drawer){ PW = {on:false, txt:null, timer:null}; drawAccount(); } }, 30000)};
   drawAccount();
 }
-async function copyPw(btn){ const t = PW.on ? PW.txt : await busy(btn, fetchPw); if (t !== null) copy(t, 'Senha copiada'); }
+async function copyPw(btn){ const t = PW.on ? PW.txt : await busy(btn, fetchPw); if (t !== null){ markPw(S.drawer); copy(t, 'Senha copiada'); } }
 function changePwForm(id){
   const a = S.byId[id];
   const m = modal({title:'Alterar senha da conta', sub:a.email, icon:'lock', body:`
@@ -509,6 +571,7 @@ async function saveSlot(id){
   if (dup) return er(`O serial ${serial} já está em uso na conta ${dup.a.email} (${dup.cli}).`);
   try {
     await rpc(was ? 'editar_vaga' : 'ativar_vaga', {p_vaga:s.id, p_cliente:cli, p_hostname:$('#fh').value.trim(), p_serial:serial, p_data:$('#fd').value || null, p_proposta:$('#fp').value.trim(), p_obs:$('#fo').value.trim()});
+    if (!was) clearPw([s.a.id]);
     await loadData(); closeModal(); toast(was ? 'Alterações salvas' : 'Máquina ativada'); renderView(); if (S.drawer) drawAccount();
   } catch(e){ er(errMsg(e)); }
 }
@@ -660,7 +723,7 @@ function drawPlan(){
       <div class="alert err hidden" id="pe" style="margin-top:10px"></div>
     </div>
     <div class="card-f" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
-      <button class="btn" onclick="LIC.NA.plan=null;LIC.NA.pw={};LIC.vAtivar()">Cancelar</button>
+      <button class="btn" onclick="LIC.NA.plan=null;LIC.NA.pw={};LIC.vAtivar();LIC.pwGuard()">Cancelar</button>
       ${canEdit() ? `<button class="btn primary" id="pok" onclick="LIC.confirmPlan(this)">${ic('check','sm')} Confirmar ${plural(P2.length,'ativação','ativações')}</button>` : '<span class="small muted">Seu perfil é somente consulta.</span>'}
     </div></div>`;
 }
@@ -686,9 +749,9 @@ async function planPw(btn, id){
   NA.pw = NA.pw || {};
   if (NA.pw[id] != null){ delete NA.pw[id]; drawPlan(); return; }
   const t = await planPwGet(btn, id); if (t === null) return;
-  NA.pw[id] = t; drawPlan();
+  markPw(id); NA.pw[id] = t; drawPlan();
 }
-async function planPwCopy(btn, id){ const t = await planPwGet(btn, id); if (t !== null) copy(t, 'Senha copiada'); }
+async function planPwCopy(btn, id){ const t = await planPwGet(btn, id); if (t !== null){ markPw(id); copy(t, 'Senha copiada'); } }
 async function confirmPlan(btn){
   const er = t => { const x = $('#pe'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
   const seen = new Set();
@@ -711,6 +774,7 @@ async function confirmPlan(btn){
   await busy(btn, async () => {
     try {
       const n = await rpc('ativar_lote', {p_itens:items});
+      clearPw(items.map(i => S.slotById[i.vaga_id].a.id));
       await loadData();
       const ids = items.map(i => i.vaga_id);
       NA.plan = null; NA.pw = {}; NA.cli = ''; NA.serial = ''; NA.qtd = 1;
@@ -858,6 +922,7 @@ const VIEWS = {painel:vPainel, contas:vContas, maquinas:vMaquinas, ativar:vAtiva
 function renderView(){
   if (!S.mounted || !$('#view')) return;
   ctx.setBadge('licencas/qualidade', S.qn || 0);
+  ctx.setBadge('licencas/painel', (S.alerts || []).length);
   (VIEWS[S.view] || vPainel)();
 }
 function updateSync(){ const e = $('#lsync'); if (e && S.loadedAt) e.textContent = 'Atualizado às ' + timeHM(S.loadedAt); }
@@ -867,7 +932,7 @@ function topbar(){
   updateSync();
 }
 const onFocus = () => { if (S.mounted && Date.now() - S.loadedAt > 60000) reload(true); };
-const onEsc = () => { if ($('#drawer')) closeDrawer(); };
+const onEsc = () => { if ($('#drawer')) leaveDrawer(); };
 // Busca global (Ctrl+K): contas, máquinas e clientes. Fora do módulo, abre Licenças antes.
 function here(sub){ if (!S.mounted) go(sub); }
 function search(q){
@@ -892,17 +957,20 @@ export default {
     S.mounted = true;
     topbar();
     renderView();
+    if (S.reopen){ openAccount(S.reopen); S.reopen = null; }
+    else if (isAdmin() && S.alerts && S.alerts.length && !S.alertToast){ S.alertToast = true; toast(`${plural(S.alerts.length,'senha usada','senhas usadas')} sem ativação: veja o Painel`, 'err'); }
     window.addEventListener('focus', onFocus);
     window.addEventListener('canivete:esc', onEsc);
     ctx.registerSearch('licencas', search);
   },
-  update(sub){ S.view = VIEWS[sub] ? sub : 'painel'; closeDrawer(); closeModal(); renderView(); },
+  update(sub){ S.view = VIEWS[sub] ? sub : 'painel'; closeDrawer(); closeModal(); renderView(); if (S.view !== 'ativar') pwGuard(); },
   unmount(){
     S.mounted = false;
     closeDrawer();
+    pwGuard();
     window.removeEventListener('focus', onFocus);
     window.removeEventListener('canivete:esc', onEsc);
   }
 };
 
-Object.assign(LIC, {ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
