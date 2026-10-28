@@ -3,6 +3,7 @@
 import { sb, CONFIGURADO } from './supabase.js';
 import { $, $$, ic, esc, norm, toast, busy, errMsg, closeModal } from './ui.js';
 import { isDark, toggleTheme } from './theme.js';
+import { carregarPendencias, cobrarPendencia, zerarPendencias } from './pendencias.js';
 import { NAV, BLOCOS, getModule, podeVer, setOcultos } from '../modules/registry.js';
 
 export const PERFIL = {admin:'Administrador', operador:'CRC', consulta:'Consulta', logistica:'Logística'};
@@ -84,6 +85,7 @@ async function enter(){
   APP.me = {id:p.id, nome:p.nome || u.email, email:u.email, perfil:p.perfil, acessos:p.acessos || []};
   // itens ocultados globalmente; sem a tabela (09_ocultar.sql) nada fica oculto
   try { const {data:c} = await sb.from('config_site').select('valor').eq('chave', 'ocultos').maybeSingle(); setOcultos(c && c.valor); } catch(e){ setOcultos([]); }
+  await carregarPendencias();
   renderShell();
   route(true);
 }
@@ -125,7 +127,7 @@ function renderForcePw(nome, email){
   });
 }
 export async function logout(){
-  teardown();
+  teardown(); zerarPendencias();
   try { await sb.auth.signOut(); } catch(e){}
   renderLogin();
 }
@@ -165,7 +167,8 @@ function renderShell(){
     </div>
   </div>`;
   $('#themeBtn').onclick = () => { toggleTheme(); paintTheme(); };
-  $('#outBtn').onclick = logout;
+  // Senha usada sem ativação: só sai depois de justificar ou ativar.
+  $('#outBtn').onclick = async () => { if (await cobrarPendencia({recarregar:true, force:true})) return; logout(); };
   $('#menuBtn').onclick = toggleSide;
   $('#kBtn').onclick = openPalette;
   $('#collapseBtn').onclick = () => {
@@ -207,7 +210,7 @@ async function route(force){
   document.title = `${nav.title} · Canivete CRC`;
   const view = $('#view');
   view.classList.toggle('full', !!nav.full);
-  if (same && APP.mod.update && !force){ APP.mod.update(nav.sub); window.scrollTo(0, 0); return; }
+  if (same && APP.mod.update && !force){ APP.mod.update(nav.sub); window.scrollTo(0, 0); cobrarPendencia(); return; }
   if (APP.mod && APP.mod.unmount) try { APP.mod.unmount(); } catch(e){ console.error(e); }
   APP.mod = null; APP.modId = null;
   ctx.setTopbar('');
@@ -219,7 +222,7 @@ async function route(force){
   APP.mod = mod; APP.modId = nav.mod;
   view.innerHTML = '';
   window.scrollTo(0, 0);
-  try { await mod.mount(view, ctx, nav.sub); }
+  try { await mod.mount(view, ctx, nav.sub); cobrarPendencia(); }
   catch(e){
     console.error(e);
     if (seq !== APP.seq) return;
@@ -292,7 +295,7 @@ document.addEventListener('keydown', e => {
   if (e.key === '/' && APP.me && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !document.activeElement.isContentEditable){ e.preventDefault(); openPalette(); return; }
   if (e.key === 'Escape'){
     if ($('#pal')) closePalette();
-    else if ($('#mdl')) closeModal();
+    else if ($('#mdl')){ if (!$('#mdl').dataset.fixo) closeModal(); }
     else if ($('#progress')) return;
     else { window.dispatchEvent(new CustomEvent('canivete:esc')); closeSide(); }
   }

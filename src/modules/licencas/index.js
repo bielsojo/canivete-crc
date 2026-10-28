@@ -3,6 +3,7 @@
    Toda escrita passa por RPCs do Supabase (o banco confere perfil e registra no histórico). */
 import { sb, rpc, fetchAll, callFn } from '../../core/supabase.js';
 import { PERFIL } from '../../core/shell.js';
+import { pendHooks, marcarPendencia, limparPendencia, cobrarPendencia } from '../../core/pendencias.js';
 import { $, ic, esc, todayIso, norm, plural, nf, timeHM, relTime, errMsg, toast, copy, busy, modal, closeModal, confirmBox, pageHead, emptyBox } from '../../core/ui.js';
 
 let ctx = null;
@@ -75,43 +76,19 @@ async function alertaLido(btn, id){
 }
 
 /* ---- Senha vista sem registrar ativação ----
-   Mostrar ou copiar a senha marca a conta como pendente; registrar uma ativação nela tira a pendência.
-   Ao sair (fechar a conta, cancelar o plano, trocar de tela) com pendência, pergunta se esqueceu de registrar.
-   Se não esqueceu, pede justificativa: vai para o histórico e para os alertas do administrador. */
-const PEND = new Map();   // conta_id -> e-mail
-const markPw = id => { const a = S.byId[id]; if (a) PEND.set(id, a.email); };
-const clearPw = ids => ids.forEach(id => PEND.delete(id));
-window.addEventListener('beforeunload', e => { if (PEND.size){ e.preventDefault(); e.returnValue = ''; } });
-function pwGuard(){
-  if (!PEND.size || $('#pgyes')) return;
-  const ids = [...PEND.keys()], emails = [...PEND.values()];
-  const m = modal({title:'Esqueceu de registrar a ativação?', icon:'alert', tone:'warn', sub:emails.join(', '), body:`<div class="form">
-    <div style="color:var(--text-2)">Você mostrou ou copiou a senha de ${emails.length > 1 ? 'contas' : 'uma conta'} e não registrou nenhuma ativação nela:
-      <ul class="small mono" style="margin:8px 0 0;padding-left:18px">${emails.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>
-    <div class="form hidden" id="pgj"><div class="field"><label>Justificativa *</label><textarea class="input" id="pgt" rows="3" placeholder="Por que a senha foi usada sem registrar uma ativação?"></textarea></div>
-      <div class="small muted" style="display:flex;gap:6px;align-items:center">${ic('info','sm')}Fica registrada no histórico e o administrador é avisado.</div>
-      <div class="alert err hidden" id="pge"></div></div>
-  </div>`, foot:`<button class="btn" id="pgno">Não, vou justificar</button><button class="btn primary" id="pgyes">Sim, registrar agora</button><button class="btn primary hidden" id="pgsend">Enviar justificativa</button>`});
-  $('#pgyes', m).onclick = () => { closeModal(); backToActivation(ids); };
-  $('#pgno', m).onclick = () => {
-    $('#pgj').classList.remove('hidden'); $('#pgno').classList.add('hidden'); $('#pgsend').classList.remove('hidden');
-    const y = $('#pgyes'); y.classList.remove('primary'); y.textContent = 'Voltar para a ativação';
-    $('#pgt').focus();
-  };
-  $('#pgsend', m).onclick = e => busy(e.currentTarget, async () => {
-    const t = $('#pgt').value.trim(), x = $('#pge');
-    const er = msg => { x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(msg)}</span>`; };
-    if (t.length < 5) return er('Escreva a justificativa.');
-    try {
-      await rpc('justificar_senha', {p_contas:ids, p_justificativa:t});
-      clearPw(ids); closeModal(); toast('Justificativa registrada. O administrador foi avisado.');
-      if (isAdmin()){ await loadAlerts(); renderView(); }
-    } catch(err){ er(errMsg(err)); }
-  });
-}
+   A pendência fica no banco (core/pendencias.js): mostrar ou copiar a senha marca a conta, ativar uma vaga nela
+   ou justificar tira. Aqui só marcamos, limpamos e dizemos ao núcleo quando a pessoa está no meio da ativação. */
+const markPw = id => { const a = S.byId[id]; if (a) marcarPendencia(id, a.email); };
+const clearPw = ids => limparPendencia(ids);
+const pwGuard = force => cobrarPendencia({force:!!force});
+pendHooks({
+  emAtivacao: () => S.mounted && (!!S.drawer || (S.view === 'ativar' && !!NA.plan)),
+  voltar: ids => { backToActivation(ids); return true; },
+  depois: async () => { if (isAdmin() && S.mounted){ await loadAlerts(); renderView(); } }
+});
 // "Sim": volta para o plano de ativação em aberto ou para a conta, onde fica o botão Ativar.
 function backToActivation(ids){
-  if (NA.plan && NA.plan.some(p => ids.includes(S.slotById[p.id].a.id))){ if (S.view !== 'ativar' || !S.mounted) go('ativar'); return; }
+  if (NA.plan && NA.plan.some(p => S.slotById[p.id] && ids.includes(S.slotById[p.id].a.id))){ if (S.view !== 'ativar' || !S.mounted) go('ativar'); return; }
   if (S.mounted) openAccount(ids[0]);
   else { S.reopen = ids[0]; go('contas'); }
 }
@@ -828,7 +805,7 @@ function drawPlan(){
       <div class="alert err hidden" id="pe" style="margin-top:10px"></div>
     </div>
     <div class="card-f" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
-      <button class="btn" onclick="LIC.NA.plan=null;LIC.NA.pw={};LIC.vAtivar();LIC.pwGuard()">Cancelar</button>
+      <button class="btn" onclick="LIC.NA.plan=null;LIC.NA.pw={};LIC.vAtivar();LIC.pwGuard(true)">Cancelar</button>
       ${canEdit() ? `<button class="btn primary" id="pok" onclick="LIC.confirmPlan(this)">${ic('check','sm')} Confirmar ${plural(P2.length,'ativação','ativações')}</button>` : '<span class="small muted">Seu perfil é somente consulta.</span>'}
     </div></div>`;
 }
@@ -837,7 +814,7 @@ async function loadPlanPws(plan){
   const ids = [...new Set(plan.map(p => S.slotById[p.id].a.id))];
   const res = await Promise.all(ids.map(id => rpc('obter_senha', {p_conta:id}).then(t => [id, t], e => { toast(errMsg(e), 'err'); return [id, null]; })));
   if (NA.plan !== plan) return;
-  res.forEach(([id, t]) => { if (t !== null) NA.pw[id] = t; });
+  res.forEach(([id, t]) => { if (t !== null){ NA.pw[id] = t; markPw(id); } });
   if (!$('#plan')) return;
   const f = document.activeElement, fid = f && f.id, pos = f && f.selectionStart;
   drawPlan();
@@ -1062,17 +1039,18 @@ export default {
     S.mounted = true;
     topbar();
     renderView();
+    let reab = null; try { reab = +sessionStorage.getItem('canivete:abrirConta') || null; sessionStorage.removeItem('canivete:abrirConta'); } catch(e){}
+    if (reab && S.byId[reab]) S.reopen = reab;
     if (S.reopen){ openAccount(S.reopen); S.reopen = null; }
     else if (isAdmin() && S.alerts && S.alerts.length && !S.alertToast){ S.alertToast = true; toast(`${plural(S.alerts.length,'senha usada','senhas usadas')} sem ativação: veja o Painel`, 'err'); }
     window.addEventListener('focus', onFocus);
     window.addEventListener('canivete:esc', onEsc);
     ctx.registerSearch('licencas', search);
   },
-  update(sub){ S.view = VIEWS[sub] ? sub : 'painel'; closeDrawer(); closeModal(); renderView(); if (S.view !== 'ativar') pwGuard(); },
+  update(sub){ S.view = VIEWS[sub] ? sub : 'painel'; closeDrawer(); closeModal(); renderView(); },
   unmount(){
     S.mounted = false;
     closeDrawer();
-    pwGuard();
     window.removeEventListener('focus', onFocus);
     window.removeEventListener('canivete:esc', onEsc);
   }
