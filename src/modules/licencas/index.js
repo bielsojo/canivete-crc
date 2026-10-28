@@ -20,6 +20,8 @@ const num = e => parseInt((String(e).match(/(\d+)@/) || [0,0])[1], 10);
 const user = e => String(e).split('@')[0];
 const domain = e => '@' + String(e).split('@')[1];
 const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+// Chave de comparação do serial: etiquetas Lenovo trazem um "S" na frente (SPE0G33QP = PE0G33QP).
+const serialKey = v => { const u = String(v || '').trim().toUpperCase(); return u.length > 1 && u[0] === 'S' ? u.slice(1) : u; };
 // Perfis que o admin pode escolher para ver uma conta (admin sempre vê todas). Lista vazia = todos.
 const PERFIS_CONTA = ['operador', 'logistica', 'consulta'];
 const perfisTxt = p => p && p.length ? p.map(k => PERFIL[k] || k).join(', ') : 'Todos os perfis';
@@ -124,7 +126,7 @@ function computeDerived(){
   S.active = act;
   S.clients = Object.entries(m).sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]));
   const serialMap = {};
-  act.forEach(s => { if (s.serial) (serialMap[s.serial.toUpperCase()] ||= []).push(s); });
+  act.forEach(s => { if (s.serial) (serialMap[serialKey(s.serial)] ||= []).push(s); });
   S.q = {
     dup: Object.entries(serialMap).filter(([k,v]) => v.length > 1),
     noHost: act.filter(s => !s.host),
@@ -306,7 +308,7 @@ function verificarSerial(){
     catch(err){
       if (!/verificar_serial|schema cache|does not exist/i.test(errMsg(err))){ out.innerHTML = `<div class="alert err">${ic('alert')}<span>${esc(errMsg(err))}</span></div>`; return; }
       aviso = `<div class="alert warn">${ic('alert')}<span>Verificação só nas contas que você vê. Para procurar em todas, rode o <b>12_verificar_serial.sql</b> no Supabase.</span></div>`;
-      rows = S.active.filter(s => s.serial.toUpperCase() === sr).map(s => ({conta_email:s.a.email, vaga:s.n, cliente:s.cli, hostname:s.host, data_ativacao:s.data, visivel:true}));
+      rows = S.active.filter(s => s.serial && serialKey(s.serial) === serialKey(sr)).map(s => ({conta_email:s.a.email, vaga:s.n, cliente:s.cli, hostname:s.host, data_ativacao:s.data, visivel:true}));
     }
     const eq = equipCliente(sr);
     const byEmail = Object.fromEntries(S.accounts.map(a => [a.email, a.id]));
@@ -640,8 +642,8 @@ function serialCliente(inp, pickId, helpSel){
 document.addEventListener('mousedown', e => { if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick-p').forEach(x => x.classList.add('hidden')); });
 function serialOwner(serial, exceptId){
   if (!serial) return null;
-  const u = serial.toUpperCase();
-  return S.active.find(s => s.id !== exceptId && s.serial.toUpperCase() === u) || null;
+  const u = serialKey(serial);
+  return S.active.find(s => s.id !== exceptId && s.serial && serialKey(s.serial) === u) || null;
 }
 function checkSerial(inp, exceptId, helpSel){
   const o = serialOwner(inp.value.trim(), exceptId), h = $(helpSel);
@@ -860,10 +862,10 @@ async function confirmPlan(btn){
   const seen = new Set();
   for (const p of NA.plan){
     const sr = p.serial.trim().toUpperCase(); if (!sr) continue;
-    if (seen.has(sr)) return er(`O serial ${sr} foi digitado duas vezes.`);
+    if (seen.has(serialKey(sr))) return er(`O serial ${sr} foi digitado duas vezes.`);
     const o = serialOwner(sr, null);
     if (o && !(p.type === 'reciclar' && o.id === p.id)) return er(`O serial ${sr} já está em uso na conta ${o.a.email} (${o.cli}).`);
-    seen.add(sr);
+    seen.add(serialKey(sr));
   }
   const rec = NA.plan.filter(p => p.type === 'reciclar');
   if (rec.length){
@@ -971,7 +973,7 @@ function vQualBody(){
   if (QV.tab === 'dup'){
     html = `<div class="alert warn" style="margin-bottom:14px">${ic('alert')}<span>O mesmo serial aparece em mais de uma vaga ativa. Normalmente é a mesma máquina ativada duas vezes. Libere a vaga que sobra.</span></div>
     <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr><th>Serial</th><th>Onde aparece</th></tr></thead><tbody>
-    ${q.dup.map(([k,v]) => `<tr><td class="mono strong">${esc(k)}</td><td><div class="mini">${v.map(s => `<div class="mini-row" onclick="LIC.openAccount(${s.a.id})"><div class="mr-m"><div class="mr-t">${esc(s.cli)}</div><div class="mr-s"><span class="mono">${esc(s.host||'sem hostname')}</span> · ${slotRef(s)} · ${fmt(s.data)}</div></div></div>`).join('')}</div></td></tr>`).join('')
+    ${q.dup.map(([k,v]) => `<tr><td class="mono strong">${esc([...new Set(v.map(s => s.serial.toUpperCase()))].join(' / '))}</td><td><div class="mini">${v.map(s => `<div class="mini-row" onclick="LIC.openAccount(${s.a.id})"><div class="mr-m"><div class="mr-t">${esc(s.cli)}</div><div class="mr-s"><span class="mono">${esc(s.host||'sem hostname')}</span> · ${slotRef(s)} · ${fmt(s.data)}</div></div></div>`).join('')}</div></td></tr>`).join('')
       || `<tr><td colspan="2">${emptyBox('check','Nenhum serial duplicado')}</td></tr>`}
     </tbody></table></div></div>`;
   } else if (QV.tab === 'estoque'){
