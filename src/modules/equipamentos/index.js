@@ -2,7 +2,7 @@
    A base é única e compartilhada (Supabase): todos com acesso consultam; só administrador
    publica uma planilha nova (XLSX/XLS/CSV). Duplo clique numa célula copia o valor. */
 import * as XLSX from 'xlsx';
-import { sb, rpc, fetchAll } from '../../core/supabase.js';
+import { sb, rpc, fetchAll, callFn } from '../../core/supabase.js';
 import { dbStore } from '../../core/db.js';
 import { $, $$, ic, esc, nf, norm, plural, relTime, errMsg, toast, copy, ask, busy, progress, pageHead, emptyBox, pagerNums, dropzone } from '../../core/ui.js';
 
@@ -108,6 +108,16 @@ function loadFile(file){
   };
   reader.readAsArrayBuffer(file);
 }
+// Só administrador: a Edge Function sgo-equipamentos entra no SGO e devolve a exportação de equipamentos.
+async function loadSgo(){
+  progress(true, 'Baixando do SGO', 'Entrando no SGO e exportando os equipamentos…', 10);
+  let blob;
+  try {
+    blob = await callFn('sgo-equipamentos', {});
+    if (!(blob instanceof Blob)) throw new Error('resposta inesperada do servidor.');
+  } catch(e){ progress(false); console.error(e); toast('Não foi possível baixar do SGO: ' + e.message, 'err'); return; }
+  loadFile(new File([blob], `SGO_equipamentos_${new Date().toISOString().slice(0, 10)}.xls`));
+}
 async function publish(rows, filename){
   const lote = crypto.randomUUID();
   try {
@@ -149,9 +159,10 @@ function draw(){
   if (!E.loaded){
     el.innerHTML = pageHead('Equipamentos', 'Busque e filtre o inventário de ativos.') + (isAdmin() ? `
       <button class="drop big" id="edrop">${ic('sheet')}<b>Solte aqui a planilha de equipamentos ou clique para escolher</b><span class="small">.xlsx, .xls ou .csv · colunas Cliente, Localidade, Modelo, Serial, Status… A base fica disponível para todos os usuários do canivete.</span></button>
-      <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>`
+      <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>
+      <div style="margin-top:12px"><button class="btn primary" id="esgo">${ic('refresh','sm')} Baixar do SGO</button></div>`
       : `<div class="card">${emptyBox('box', 'Nenhuma base de equipamentos publicada', 'Um administrador precisa carregar a planilha de equipamentos.')}</div>`);
-    if (isAdmin()) dropzone($('#edrop'), $('#efile'), f => loadFile(f[0]));
+    if (isAdmin()){ dropzone($('#edrop'), $('#efile'), f => loadFile(f[0])); $('#esgo').onclick = loadSgo; }
     return;
   }
   const b = E.base, quando = b.atualizado_em ? `${new Date(b.atualizado_em).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'})} (${relTime(b.atualizado_em)})` : '';
@@ -159,7 +170,7 @@ function draw(){
   el.innerHTML = pageHead('Equipamentos', isAdmin()
       ? `${nf(E.raw.length)} ${E.raw.length === 1 ? 'equipamento' : 'equipamentos'} · base <b>${esc(b.arquivo)}</b>, atualizada em ${quando}${b.atualizado_por_nome ? ` por ${esc(b.atualizado_por_nome)}` : ''}`
       : (quando ? `Atualizada em ${quando}` : ''),
-    (isAdmin() ? `<button class="btn primary" id="eup" title="Substitui a base para todos os usuários">${ic('up','sm')} Atualizar base</button>` : '') +
+    (isAdmin() ? `<button class="btn primary" id="esgo" title="Baixa a exportação do SGO e substitui a base para todos os usuários">${ic('refresh','sm')} Atualizar do SGO</button><button class="btn" id="eup" title="Substitui a base para todos os usuários por uma planilha do computador">${ic('up','sm')} Enviar planilha</button>` : '') +
     `<button class="btn" id="eexp">${ic('dl','sm')} Exportar XLSX</button>`) + `
 
     <input type="file" id="efile" accept=".xls,.xlsx,.csv" hidden>
@@ -177,6 +188,7 @@ function draw(){
       <div id="epg"></div>
     </div>`;
   if (isAdmin()){
+    $('#esgo').onclick = loadSgo;
     $('#eup').onclick = () => $('#efile').click();
     $('#efile').onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; };
   }
