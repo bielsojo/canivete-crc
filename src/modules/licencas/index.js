@@ -845,25 +845,25 @@ function exportCsv(){
 const NA = {cli:'', serial:'', qtd:1, data:'', plan:null};
 function vAtivar(){
   if (!NA.data) NA.data = todayIso();
-  $('#view').innerHTML = pageHead('Nova ativação', 'Informe o cliente e quantas máquinas. A ferramenta escolhe as vagas e, se faltar espaço, sugere reciclar as ativações mais antigas.') + `
+  $('#view').innerHTML = pageHead('Nova ativação', 'Informe o serial e o cliente. Cada licença é de uma máquina (serial único). A ferramenta escolhe a vaga e, se faltar espaço, sugere reciclar a ativação mais antiga.') + `
   <div class="steps"><span class="${NA.plan ? '' : 'on'}"><b>1</b>Pedido</span>${ic('arrow','sm')}<span class="${NA.plan ? 'on' : ''}"><b>2</b>Conferir e confirmar</span></div>
   <div class="card" style="max-width:860px"><div class="card-b" style="padding-top:18px">
     <div class="form"><div class="field" style="max-width:320px"><label>Serial do equipamento</label><input class="input mono" id="as" value="${esc(NA.serial)}" placeholder="Busca o cliente na base de equipamentos" autocomplete="off"
         oninput="LIC.NA.serial=this.value;LIC.checkSerial(this,null,'#ash')" onchange="LIC.serialCliente(this,'ac','#asc')" onkeydown="if(event.key==='Enter')this.blur()"><span class="help" id="ash"></span><span class="help" id="asc"></span></div>
-    <div style="display:grid;grid-template-columns:minmax(0,2fr) 120px 170px;gap:14px" class="na-grid">
+    <div style="display:grid;grid-template-columns:minmax(0,2fr) 170px;gap:14px" class="na-grid">
       <div class="field"><label>Cliente *</label>${clientPicker('ac', NA.cli)}</div>
-      <div class="field"><label>Máquinas</label><input class="input" type="number" id="aq" min="1" max="20" value="${NA.qtd}" onkeydown="if(event.key==='Enter')LIC.makePlan()"></div>
       <div class="field"><label>Data da ativação</label><input class="input" type="date" id="ad" value="${NA.data}" max="${todayIso()}"></div>
     </div>
     <div class="alert err hidden" id="ae"></div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn primary" onclick="LIC.makePlan()">${ic('zap','sm')} Sugerir vagas</button>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn primary" onclick="LIC.makePlan()">${ic('zap','sm')} Sugerir vaga</button>
       <span class="small muted">${plural(S.tot.f,'vaga livre','vagas livres')} no momento · reservadas nunca são usadas</span></div></div>
   </div></div><div id="plan"></div>
-  <style>@media (max-width:640px){.na-grid{grid-template-columns:1fr 1fr!important}.na-grid>.field:first-child{grid-column:1/-1}}</style>`;
+  <style>@media (max-width:640px){.na-grid{grid-template-columns:1fr!important}}</style>`;
   if (NA.plan) drawPlan();
 }
 function makePlan(){
-  const cli = $('#ac').value.trim().toUpperCase(), qtd = Math.max(1, Math.min(20, parseInt($('#aq').value) || 1));
+  // Uma máquina por ativação: cada licença tem um serial único.
+  const cli = $('#ac').value.trim().toUpperCase(), qtd = 1;
   NA.data = $('#ad').value || todayIso();
   if (!cli){ const e = $('#ae'); e.classList.remove('hidden'); e.innerHTML = ic('alert') + '<span>Informe o cliente.</span>'; $('#ac-w .cpick-b').classList.add('bad'); return; }
   NA.cli = cli; NA.qtd = qtd;
