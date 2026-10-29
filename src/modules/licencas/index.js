@@ -42,7 +42,7 @@ async function loadData(){
     // Sem a coluna "perfis" (11_contas_por_perfil.sql ainda não rodado), lê só id e e-mail.
     fetchAll((a,b) => sb.from('contas').select('id,email,perfis').order('id').range(a,b))
       .catch(() => fetchAll((a,b) => sb.from('contas').select('id,email').order('id').range(a,b))),
-    fetchAll((a,b) => sb.from('vagas').select('id,conta_id,n,status,hostname,serial,data_ativacao,proposta,obs,atualizado_em,clientes(nome)').order('id').range(a,b)),
+    fetchAll((a,b) => sb.from('vagas').select('id,conta_id,n,status,hostname,serial,data_ativacao,ativado_em,proposta,obs,atualizado_em,clientes(nome)').order('id').range(a,b)),
     loadEquip()
   ]);
   S.equip = equip;
@@ -51,7 +51,7 @@ async function loadData(){
   vagas.forEach(v => {
     const a = by[v.conta_id]; if (!a) return;
     const s = {id:v.id, n:v.n, st:v.status, cli:v.clientes ? v.clientes.nome : '', serial:v.serial||'', host:v.hostname||'',
-               data:v.data_ativacao, prop:v.proposta||'', obs:v.obs||'', upd:v.atualizado_em, a};
+               data:v.data_ativacao, ativ:v.ativado_em, prop:v.proposta||'', obs:v.obs||'', upd:v.atualizado_em, a};
     a.slots.push(s); sl[s.id] = s;
   });
   const accs = Object.values(by);
@@ -59,7 +59,61 @@ async function loadData(){
   accs.sort((a,b) => num(a.email) - num(b.email) || a.email.localeCompare(b.email));
   S.accounts = accs; S.byId = by; S.slotById = sl; S.loadedAt = Date.now();
   computeDerived();
-  await loadAlerts();
+  await Promise.all([loadAlerts(), loadSol()]);
+}
+/* ---- Solicitações de edição (14_aprovacao_edicoes.sql) ----
+   Quem não é administrador edita direto até 24 h depois da ativação; depois, a edição vira solicitação.
+   Administrador vê as pendentes; o solicitante vê as dele pendentes e as decididas ainda sem ciência. */
+async function loadSol(){
+  let q = sb.from('solicitacoes_edicao').select('*').order('criado_em', {ascending:false});
+  q = isAdmin() ? q.eq('status', 'pendente') : q.eq('solicitante_id', ctx.me.id).or('status.eq.pendente,visto_em.is.null');
+  const {data, error} = await q;
+  if (error) console.error('solicitacoes_edicao:', error);
+  S.sol = data || [];
+  S.solVaga = Object.fromEntries(S.sol.filter(x => x.status === 'pendente').map(x => [x.vaga_id, x]));
+}
+// Fora do prazo: mais de 24 h corridas desde a ativação real (sem hora registrada = fora). O banco confere de novo.
+const foraPrazo = s => !s.ativ || Date.now() - new Date(s.ativ) > 864e5;
+const CAMPOS = [['cliente','Cliente'],['hostname','Hostname'],['serial','Serial'],['data_ativacao','Data da ativação'],['proposta','Proposta'],['obs','Observação']];
+const solVal = (k, v) => v ? esc(k === 'data_ativacao' ? fmt(v) : v) : '<span class="muted">—</span>';
+const solDiff = x => CAMPOS.filter(([k]) => (x.antes[k] || '') !== (x.depois[k] || ''))
+  .map(([k, l]) => `<div class="small"><span class="muted">${l}:</span> <s class="muted">${solVal(k, x.antes[k])}</s> → <b>${solVal(k, x.depois[k])}</b></div>`).join('');
+const dtHora = t => `${new Date(t).toLocaleDateString('pt-BR')} ${timeHM(t)}`;
+function solCard(){
+  const L = S.sol || []; if (!L.length) return '';
+  const adm = isAdmin();
+  const st = x => x.status === 'pendente' ? '<span class="badge b-warn">Aguardando aprovação</span>' : x.status === 'aprovada' ? `<span class="badge b-ok">${ic('check')}Aprovada</span>` : '<span class="badge b-bad">Rejeitada</span>';
+  return `<div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div class="card-h"><h3>${adm ? 'Alterações aguardando aprovação' : 'Suas solicitações de alteração'}</h3>
+    <span class="sub">${plural(L.length, adm ? 'pendente' : 'solicitação', adm ? 'pendentes' : 'solicitações')}</span></div><div class="card-b"><div class="mini">
+    ${L.map(x => `<div class="mini-row" style="cursor:default;align-items:flex-start"><div class="mr-m">
+      <div class="small">${adm ? `<b>${esc(x.solicitante_nome || 'Sem nome')}</b> · ` : ''}<span class="mono">${esc(x.conta_email)}</span> vaga ${x.vaga_n} · ${dtHora(x.criado_em)}</div>
+      <div style="margin:4px 0">${solDiff(x)}</div>
+      ${x.status !== 'pendente' ? `<div class="mr-s">${x.status === 'aprovada' ? 'Aprovada' : 'Rejeitada'} por ${esc(x.decidido_por_nome || '—')} em ${dtHora(x.decidido_em)}${x.motivo ? ` · ${esc(x.motivo)}` : ''}</div>` : ''}</div>
+      ${adm ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" onclick="LIC.decidirSol(this,${x.id},true)">${ic('check','sm')} Aprovar</button><button class="btn sm" style="color:var(--bad)" onclick="LIC.decidirSol(this,${x.id},false)">${ic('x','sm')} Rejeitar</button></div>`
+        : x.status === 'pendente' ? st(x) : `<div style="display:flex;gap:6px;align-items:center">${st(x)}<button class="btn sm" onclick="LIC.solVista(this,${x.id})">${ic('check','sm')} Ciente</button></div>`}</div>`).join('')}
+  </div></div></div>`;
+}
+async function decidirSol(btn, id, aprovar){
+  const x = (S.sol || []).find(s => s.id === id); if (!x || !isAdmin()) return;
+  const m = modal({title: aprovar ? 'Aprovar alteração?' : 'Rejeitar alteração?', sub:`${x.conta_email} · vaga ${x.vaga_n}`, icon: aprovar ? 'check' : 'x', tone: aprovar ? 'acc' : 'bad', body:`<div class="form">
+    <div class="small">Pedida por <b>${esc(x.solicitante_nome || 'Sem nome')}</b> em ${dtHora(x.criado_em)}</div><div>${solDiff(x)}</div>
+    <div class="small muted">${aprovar ? 'A alteração é aplicada na vaga agora.' : 'A vaga continua com os dados atuais.'}</div>
+    <div class="field"><label>Comentário para o solicitante (opcional)</label><input class="input" id="sdm"></div>
+    <div class="alert err hidden" id="sderr"></div></div>`,
+    foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn ${aprovar ? 'primary' : 'danger'}" id="sdok">${aprovar ? 'Aprovar' : 'Rejeitar'}</button>`});
+  $('#sdok', m).onclick = e => busy(e.currentTarget, async () => {
+    try {
+      await rpc('decidir_solicitacao', {p_id:id, p_aprovar:aprovar, p_motivo:$('#sdm').value.trim()});
+      closeModal(); await loadData(); renderView(); if (S.drawer) drawAccount();
+      toast(aprovar ? 'Alteração aprovada e aplicada' : 'Alteração rejeitada');
+    } catch(err){ const el = $('#sderr'); el.classList.remove('hidden'); el.innerHTML = ic('alert') + `<span>${esc(errMsg(err))}</span>`; }
+  });
+}
+async function solVista(btn, id){
+  await busy(btn, async () => {
+    try { await rpc('marcar_solicitacao_vista', {p_id:id}); await loadSol(); renderView(); }
+    catch(e){ toast(errMsg(e), 'err'); }
+  });
 }
 // Alertas de senha usada sem ativação (só administrador; sem a tabela, fica vazio).
 async function loadAlerts(){
@@ -178,6 +232,7 @@ function vPainel(){
     ${S.alerts.map(x => `<div class="mini-row" style="cursor:default"><div class="mr-m"><div class="small"><b>${esc(x.usuario_nome || 'Sem nome')}</b> · <span class="mono">${esc(x.conta_email)}</span></div><div class="mr-s">${esc(x.justificativa)}</div></div>
       <span class="mr-s nowrap">${relTime(x.quando)}</span><button class="btn sm" onclick="LIC.alertaLido(this,${x.id})">${ic('check','sm')} Ciente</button></div>`).join('')}
   </div></div></div>` : ''}
+  ${solCard()}
   <div class="grid kpis">
     ${kpi('key','var(--text-2)','var(--surface-2)','Contas de e-mail', nf(A.length), `${nf(T.t)} vagas no total`)}
     ${kpi('pc','var(--accent)','var(--accent-soft)','Máquinas ativas', nf(T.u), `${pct(T.u,T.t)}% da capacidade`)}
@@ -238,7 +293,7 @@ function vContas(){
   $('#view').innerHTML = pageHead('Contas', 'Cada conta de e-mail comporta até 5 máquinas. Clique em uma conta para ver a senha e as vagas.',
     `<button class="btn" onclick="LIC.verificarSerial()">${ic('search')} Verificar serial</button> ` +
     (isAdmin() ? `<button class="btn" onclick="LIC.perfisLote()">${ic('users')} Visibilidade em lote</button> ` : '') +
-    (canEdit() ? `<button class="btn" onclick="LIC.newAccountForm()">${ic('plus')} Nova conta</button>` : '')) + `
+    (isAdmin() ? `<button class="btn" onclick="LIC.newAccountForm()">${ic('plus')} Nova conta</button>` : '')) + `
   <div class="toolbar">
     <div class="searchbox">${ic('search','sm')}<input class="input" type="search" id="cq" placeholder="Buscar e-mail, cliente, hostname ou serial" value="${esc(CV.q)}" oninput="LIC.CV.q=this.value;LIC.vContasBody()"></div>
     <div class="chips" id="cchips">${chips.map(([k,l]) => `<button class="chip ${CV.f===k?'on':''}" onclick="LIC.CV.f='${k}';LIC.vContas()">${l}<span class="n">${S.accounts.filter(a => contasFilter(a,k)).length}</span></button>`).join('')}</div>
@@ -355,7 +410,7 @@ function perfisLoteUm(id, on){ on ? PL.sel.add(id) : PL.sel.delete(id); $('#pln'
 function perfisLoteTodas(on){ plFiltradas().forEach(a => on ? PL.sel.add(a.id) : PL.sel.delete(a.id)); perfisLoteLista(); }
 
 function newAccountForm(){
-  if (!canEdit()) return;
+  if (!isAdmin()) return;
   const next = Math.max(0, ...S.accounts.map(a => num(a.email))) + 1;
   const dom = S.accounts[0] ? domain(S.accounts[0].email) : '@lowcost.com.br';
   const m = modal({title:'Nova conta de licença', sub:'A conta é criada com 5 vagas livres. A senha fica criptografada no cofre do Supabase.', icon:'mail', body:`
@@ -415,7 +470,7 @@ function drawAccount(){
         <div class="small muted" style="margin-top:6px;display:flex;gap:6px;align-items:center">${ic('info','sm')}Cada visualização da senha fica registrada no histórico.</div>
       </div>
       <div>
-        <div class="sec-t">Vagas ${cellsHtml(a)}</div>
+        <div class="sec-t">Vagas ${cellsHtml(a)}${isAdmin() && c.u ? `<button class="btn sm ghost" style="color:var(--bad);margin-left:auto" onclick="LIC.resetarConta(${a.id})">${ic('refresh','sm')} Resetar Todas as Licenças</button>` : ''}</div>
         <div class="grid" style="gap:10px">${a.slots.map(s => slotCard(s, edit)).join('')}</div>
       </div>
       ${MS365_ATIVO ? `<div>
@@ -452,6 +507,30 @@ function excluirConta(id){
     } catch(err){ const x = $('#xcerr'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(errMsg(err))}</span>`; }
   });
   setTimeout(() => $('#xce').focus(), 50);
+}
+// Reset: libera todas as vagas ativas da conta (mesma regra do "Liberar vaga"; reservadas ficam). Só administrador; o banco confere.
+function resetarConta(id){
+  const a = S.byId[id]; if (!a || !isAdmin()) return;
+  const act = a.slots.filter(s => s.st === 'ativo');
+  const m = modal({title:'Resetar todas as licenças?', sub:a.email, icon:'alert', tone:'bad', body:`<div class="form">
+    <div class="alert err">${ic('alert')}<span>Todas as <b>${plural(act.length,'vaga ativa','vagas ativas')}</b> da conta <b>${esc(a.email)}</b> ficam livres. As máquinas abaixo perdem a licença. Vagas reservadas e a conta não são alteradas.</span></div>
+    <ul class="small" style="margin:0;padding-left:18px">${act.map(s => `<li><b>${esc(s.cli)}</b> · <span class="mono">${esc(s.host || 'sem hostname')}</span> · vaga ${s.n}</li>`).join('')}</ul>
+    <div class="alert warn">${ic('alert')}<span>Lembre de desativar o Office nessas máquinas.</span></div>
+    <label class="chk"><input type="checkbox" id="rcc" onchange="LIC.$('#rcok').disabled = !this.checked"> Confirmo que quero liberar ${plural(act.length,'vaga','vagas')} desta conta</label>
+    <div class="alert err hidden" id="rcerr"></div></div>`,
+    foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn danger" id="rcok" disabled>Resetar licenças</button>`});
+  $('#rcok', m).onclick = e => busy(e.currentTarget, async () => {
+    let r;
+    try { r = await rpc('resetar_conta', {p_conta:id}); }
+    catch(err){ const x = $('#rcerr'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(errMsg(err))}</span>`; return; }
+    closeModal(); await loadData(); renderView(); if (S.drawer) drawAccount();
+    const ok = r.liberadas || [], bad = r.falhas || [];
+    if (!bad.length) return toast(ok.length ? `${plural(ok.length,'vaga liberada','vagas liberadas')}` : 'Nenhuma vaga ativa nesta conta');
+    modal({title:'Reset concluído com falhas', sub:a.email, icon:'alert', tone:'warn', body:`<div class="form">
+      <div class="small">${ok.length ? `Liberadas: <b>vaga${ok.length > 1 ? 's' : ''} ${ok.join(', ')}</b>` : 'Nenhuma vaga foi liberada.'}</div>
+      <div class="alert err">${ic('alert')}<div>Não liberadas:<ul style="margin:6px 0 0;padding-left:18px">${bad.map(f => `<li>Vaga ${f.vaga}: ${esc(f.erro)}</li>`).join('')}</ul></div></div></div>`,
+      foot:`<button class="btn primary" onclick="LIC.closeModal()">Fechar</button>`});
+  });
 }
 
 /* ---- Dispositivos e ativações no Microsoft 365 (somente leitura, via Edge Function "microsoft365") ---- */
@@ -544,7 +623,8 @@ function slotCard(s, edit){
     ${adm ? `<div class="slot-a"><button class="btn sm" onclick="LIC.tirarReserva(${s.id})">${ic('unlock','sm')} Tirar reserva</button></div>` : ''}</div>`;
   if (s.st === 'disponivel') return `<div class="slot free"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow"><div class="strong">Vaga livre</div><div class="small muted">Pronta para uma nova ativação</div></div>
     ${adm ? resBtn : ''}${edit ? `<button class="btn sm primary" onclick="LIC.slotForm(${s.id})">${ic('plus','sm')} Ativar</button>` : ''}</div></div>`;
-  return `<div class="slot ${s.qs ? 'q-' + s.qs : ''}"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(s.cli)}</div><div class="small muted mono trunc">${esc(s.host) || 'sem hostname'}</div></div><span class="badge b-acc dotb">Em uso</span></div>
+  const pend = S.solVaga && S.solVaga[s.id];
+  return `<div class="slot ${s.qs ? 'q-' + s.qs : ''}"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(s.cli)}</div><div class="small muted mono trunc">${esc(s.host) || 'sem hostname'}</div></div>${pend ? `<span class="badge b-warn" title="Pedida por ${esc(pend.solicitante_nome)}">${ic('clock')}Alteração pendente</span> ` : ''}<span class="badge b-acc dotb">Em uso</span></div>
     <div class="kv"><span>Serial</span><span class="mono">${esc(s.serial) || '<span class="muted">—</span>'}</span><span>Ativada em</span><span>${dateTag(s)}${s.data ? ` <span class="muted small">· ${ageTxt(ageDays(s.data))}</span>` : ''}</span>
       ${s.prop ? `<span>Proposta</span><span>${esc(s.prop)}</span>` : ''}${s.obs ? `<span>Observação</span><span>${esc(s.obs)}</span>` : ''}</div>
     ${edit ? `<div class="slot-a"><button class="btn sm" onclick="LIC.slotForm(${s.id})">${ic('edit','sm')} Editar</button>${adm ? `<button class="btn sm" style="color:var(--bad)" onclick="LIC.confirmRelease(${s.id})">${ic('unlock','sm')} Liberar vaga</button>${resBtn}` : ''}</div>` : ''}</div>`;
@@ -639,6 +719,7 @@ function slotForm(id){
       <div class="two"><div class="field"><label>Data da ativação</label><input class="input" type="date" id="fd" value="${s.data || todayIso()}" max="${todayIso()}"></div>
         <div class="field"><label>Proposta</label><input class="input" id="fp" value="${esc(s.prop)}"></div></div>
       <div class="field"><label>Observação</label><input class="input" id="fo" value="${esc(s.obs)}"></div>
+      ${edit && !isAdmin() && foraPrazo(s) ? `<div class="alert warn">${ic('clock')}<span>${S.solVaga && S.solVaga[s.id] ? 'Já existe uma alteração desta vaga aguardando aprovação do administrador.' : 'Esta máquina foi ativada há mais de 24 horas: a alteração vai para aprovação do administrador e só é aplicada depois de aprovada.'}</span></div>` : ''}
       <div class="alert err hidden" id="fe"></div>
     </div>`, foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn primary" id="fok">${edit ? 'Salvar alterações' : 'Ativar máquina'}</button>`});
   $('#fok', m).onclick = e => busy(e.currentTarget, () => saveSlot(id));
@@ -652,9 +733,11 @@ async function saveSlot(id){
   const dup = serialOwner(serial, s.id);
   if (dup) return er(`O serial ${serial} já está em uso na conta ${dup.a.email} (${dup.cli}).`);
   try {
-    await rpc(was ? 'editar_vaga' : 'ativar_vaga', {p_vaga:s.id, p_cliente:cli, p_hostname:$('#fh').value.trim(), p_serial:serial, p_data:$('#fd').value || null, p_proposta:$('#fp').value.trim(), p_obs:$('#fo').value.trim()});
+    const r = await rpc(was ? 'editar_vaga' : 'ativar_vaga', {p_vaga:s.id, p_cliente:cli, p_hostname:$('#fh').value.trim(), p_serial:serial, p_data:$('#fd').value || null, p_proposta:$('#fp').value.trim(), p_obs:$('#fo').value.trim()});
     if (!was) clearPw([s.a.id]);
-    await loadData(); closeModal(); toast(was ? 'Alterações salvas' : 'Máquina ativada'); renderView(); if (S.drawer) drawAccount();
+    await loadData(); closeModal();
+    toast(!was ? 'Máquina ativada' : r === 'pendente' ? 'Fora do prazo de 24 h: alteração enviada para aprovação do administrador' : 'Alterações salvas');
+    renderView(); if (S.drawer) drawAccount();
   } catch(e){ er(errMsg(e)); }
 }
 async function confirmRelease(id){
@@ -968,7 +1051,7 @@ function vQualBody(){
    HISTÓRICO
    ===================================================================== */
 const HV = {q:'', acao:'', page:0};
-const ACOES = ['Máquina ativada','Máquina editada','Vaga liberada','Reciclagem (liberada)','Senha visualizada','Senha da conta alterada','Conta criada','Vaga reservada','Reserva retirada','Conta excluída','Usuário criado','Senha de usuário redefinida','Datas confirmadas','Base de equipamentos atualizada'];
+const ACOES = ['Máquina ativada','Máquina editada','Vaga liberada','Reciclagem (liberada)','Senha visualizada','Senha da conta alterada','Conta criada','Vaga reservada','Reserva retirada','Conta excluída','Usuário criado','Senha de usuário redefinida','Datas confirmadas','Base de equipamentos atualizada','Edição solicitada','Edição aprovada','Edição rejeitada','Licença resetada','Licenças da conta resetadas'];
 function vHistorico(){
   $('#view').innerHTML = pageHead('Histórico', 'Tudo o que foi feito na ferramenta: quem, o quê e quando.') + `
   <div class="toolbar">
@@ -1004,7 +1087,7 @@ const VIEWS = {painel:vPainel, contas:vContas, maquinas:vMaquinas, ativar:vAtiva
 function renderView(){
   if (!S.mounted || !$('#view')) return;
   ctx.setBadge('licencas/qualidade', S.qn || 0);
-  ctx.setBadge('licencas/painel', (S.alerts || []).length);
+  ctx.setBadge('licencas/painel', (S.alerts || []).length + (S.sol || []).filter(x => isAdmin() ? x.status === 'pendente' : x.status !== 'pendente').length);
   (VIEWS[S.view] || vPainel)();
 }
 function updateSync(){ const e = $('#lsync'); if (e && S.loadedAt) e.textContent = 'Atualizado às ' + timeHM(S.loadedAt); }
@@ -1043,6 +1126,8 @@ export default {
     if (reab && S.byId[reab]) S.reopen = reab;
     if (S.reopen){ openAccount(S.reopen); S.reopen = null; }
     else if (isAdmin() && S.alerts && S.alerts.length && !S.alertToast){ S.alertToast = true; toast(`${plural(S.alerts.length,'senha usada','senhas usadas')} sem ativação: veja o Painel`, 'err'); }
+    const solN = (S.sol || []).filter(x => isAdmin() ? x.status === 'pendente' : x.status !== 'pendente').length;
+    if (solN && !S.solToast){ S.solToast = true; setTimeout(() => toast(isAdmin() ? `${plural(solN,'alteração aguarda','alterações aguardam')} aprovação: veja o Painel` : `${plural(solN,'solicitação sua foi decidida','solicitações suas foram decididas')}: veja o Painel`), 1500); }
     window.addEventListener('focus', onFocus);
     window.addEventListener('canivete:esc', onEsc);
     ctx.registerSearch('licencas', search);
@@ -1056,4 +1141,4 @@ export default {
   }
 };
 
-Object.assign(LIC, {verificarSerial,PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {decidirSol,solVista,resetarConta,verificarSerial,PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
