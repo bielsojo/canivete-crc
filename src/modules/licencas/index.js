@@ -74,7 +74,7 @@ async function loadSol(){
 }
 // Fora do prazo: mais de 24 h corridas desde a ativação real (sem hora registrada = fora). O banco confere de novo.
 const foraPrazo = s => !s.ativ || Date.now() - new Date(s.ativ) > 864e5;
-const CAMPOS = [['cliente','Cliente'],['hostname','Hostname'],['serial','Serial'],['data_ativacao','Data da ativação'],['proposta','Proposta'],['obs','Observação']];
+const CAMPOS = [['cliente','Cliente'],['hostname','Hostname'],['serial','Serial'],['data_ativacao','Data da ativação'],['proposta','Número do pedido'],['obs','Observação']];
 const solVal = (k, v) => v ? esc(k === 'data_ativacao' ? fmt(v) : v) : '<span class="muted">—</span>';
 const solDiff = x => CAMPOS.filter(([k]) => (x.antes[k] || '') !== (x.depois[k] || ''))
   .map(([k, l]) => `<div class="small"><span class="muted">${l}:</span> <s class="muted">${solVal(k, x.antes[k])}</s> → <b>${solVal(k, x.depois[k])}</b></div>`).join('');
@@ -88,6 +88,7 @@ function solCard(){
     ${L.map(x => `<div class="mini-row" style="cursor:default;align-items:flex-start"><div class="mr-m">
       <div class="small">${adm ? `<b>${esc(x.solicitante_nome || 'Sem nome')}</b> · ` : ''}<span class="mono">${esc(x.conta_email)}</span> vaga ${x.vaga_n} · ${dtHora(x.criado_em)}</div>
       <div style="margin:4px 0">${solDiff(x)}</div>
+      ${x.justificativa ? `<div class="small"><span class="muted">Justificativa:</span> ${esc(x.justificativa)}</div>` : ''}
       ${x.status !== 'pendente' ? `<div class="mr-s">${x.status === 'aprovada' ? 'Aprovada' : 'Rejeitada'} por ${esc(x.decidido_por_nome || '—')} em ${dtHora(x.decidido_em)}${x.motivo ? ` · ${esc(x.motivo)}` : ''}</div>` : ''}</div>
       ${adm ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" onclick="LIC.decidirSol(this,${x.id},true)">${ic('check','sm')} Aprovar</button><button class="btn sm" style="color:var(--bad)" onclick="LIC.decidirSol(this,${x.id},false)">${ic('x','sm')} Rejeitar</button></div>`
         : x.status === 'pendente' ? st(x) : `<div style="display:flex;gap:6px;align-items:center">${st(x)}<button class="btn sm" onclick="LIC.solVista(this,${x.id})">${ic('check','sm')} Ciente</button></div>`}</div>`).join('')}
@@ -97,6 +98,7 @@ async function decidirSol(btn, id, aprovar){
   const x = (S.sol || []).find(s => s.id === id); if (!x || !isAdmin()) return;
   const m = modal({title: aprovar ? 'Aprovar alteração?' : 'Rejeitar alteração?', sub:`${x.conta_email} · vaga ${x.vaga_n}`, icon: aprovar ? 'check' : 'x', tone: aprovar ? 'acc' : 'bad', body:`<div class="form">
     <div class="small">Pedida por <b>${esc(x.solicitante_nome || 'Sem nome')}</b> em ${dtHora(x.criado_em)}</div><div>${solDiff(x)}</div>
+    ${x.justificativa ? `<div class="small"><span class="muted">Justificativa:</span> ${esc(x.justificativa)}</div>` : ''}
     <div class="small muted">${aprovar ? 'A alteração é aplicada na vaga agora.' : 'A vaga continua com os dados atuais.'}</div>
     <div class="field"><label>Comentário para o solicitante (opcional)</label><input class="input" id="sdm"></div>
     <div class="alert err hidden" id="sderr"></div></div>`,
@@ -342,7 +344,7 @@ function verificarSerial(){
       aviso = `<div class="alert warn">${ic('alert')}<span>Verificação só nas contas que você vê. Para procurar em todas, rode o <b>12_verificar_serial.sql</b> no Supabase.</span></div>`;
       rows = S.active.filter(s => s.serial && serialKey(s.serial) === serialKey(sr)).map(s => ({conta_email:s.a.email, vaga:s.n, cliente:s.cli, hostname:s.host, data_ativacao:s.data, visivel:true}));
     }
-    const eq = equipCliente(sr);
+    const eq = await equipClienteBanco(sr);
     const byEmail = Object.fromEntries(S.accounts.map(a => [a.email, a.id]));
     out.innerHTML = aviso + (rows && rows.length
       ? `<div class="alert ${rows.length > 1 ? 'err' : 'warn'}">${ic('alert')}<span>O serial <b class="mono">${esc(sr)}</b> já está vinculado ${rows.length > 1 ? `a <b>${rows.length} vagas</b> (duplicado)` : 'a uma vaga'}.</span></div>
@@ -351,7 +353,7 @@ function verificarSerial(){
           ${r.visivel ? '<span class="badge b-acc dotb">Em uso</span>' : `<span class="badge b-res" title="A conta está liberada só para outros perfis">${ic('lock')}Outro perfil</span>`}</div>
           <div class="kv"><span>Hostname</span><span class="mono">${esc(r.hostname) || '<span class="muted">—</span>'}</span><span>Ativada em</span><span>${fmt(r.data_ativacao)}</span></div></div>`; }).join('')}</div>`
       : `<div class="alert ok">${ic('check')}<span>O serial <b class="mono">${esc(sr)}</b> não está vinculado a nenhuma conta.</span></div>`)
-      + `<div class="small muted" style="display:flex;gap:6px;align-items:center">${ic('info','sm')}${eq ? `Na base de equipamentos, o cliente deste serial é <b>${esc(eq)}</b>.` : S.equip ? 'Serial não encontrado na base de equipamentos.' : esc(S.equipErr || 'Base de equipamentos indisponível.')}</div>`;
+      + `<div class="small muted" style="display:flex;gap:6px;align-items:center">${ic('info','sm')}${eq ? `Na base de equipamentos, o cliente deste serial é <b>${esc(eq)}</b>.` : S.equip || sr in EQS ? 'Serial não encontrado na base de equipamentos.' : esc(S.equipErr || 'Base de equipamentos indisponível.')}</div>`;
   });
   setTimeout(() => $('#vsq').focus(), 50);
 }
@@ -459,7 +461,7 @@ function drawAccount(){
     </div>
     <div class="drawer-b">
       <div>
-        <div class="sec-t">Acesso à conta Microsoft${edit ? `<button class="btn sm ghost" onclick="LIC.changePwForm(${a.id})">${ic('edit','sm')} Alterar senha</button>` : ''}</div>
+        <div class="sec-t">Acesso à conta Microsoft${isAdmin() ? `<button class="btn sm ghost" onclick="LIC.changePwForm(${a.id})">${ic('edit','sm')} Alterar senha</button>` : ''}</div>
         <div class="card" style="overflow:hidden">
           <div class="cred"><span class="k">E-mail</span><span class="v mono trunc">${esc(a.email)}</span><button class="ibtn" title="Copiar e-mail" onclick="LIC.copy('${esc(a.email)}','E-mail copiado')">${ic('copy','sm')}</button></div>
           <div class="cred"><span class="k">Senha</span><span class="v mono trunc" id="pwv">${PW.on ? esc(PW.txt) : '<span class="muted">••••••••••••</span>'}</span>
@@ -598,8 +600,9 @@ async function togglePw(btn){
   drawAccount();
 }
 async function copyPw(btn){ const t = PW.on ? PW.txt : await busy(btn, fetchPw); if (t !== null){ markPw(S.drawer); copy(t, 'Senha copiada'); } }
+// Alterar a senha guardada: só administrador (o banco confere de novo).
 function changePwForm(id){
-  const a = S.byId[id];
+  const a = S.byId[id]; if (!a || !isAdmin()) return;
   const m = modal({title:'Alterar senha da conta', sub:a.email, icon:'lock', body:`
     <div class="form">
       <div class="alert info">${ic('info')}<span>Altere aqui <b>depois</b> de trocar a senha no portal da Microsoft. Isto só atualiza o que fica guardado no sistema.</span></div>
@@ -626,7 +629,7 @@ function slotCard(s, edit){
   const pend = S.solVaga && S.solVaga[s.id];
   return `<div class="slot ${s.qs ? 'q-' + s.qs : ''}"><div class="slot-h"><span class="slot-n">${s.n}</span><div class="grow" style="min-width:0"><div class="strong trunc">${esc(s.cli)}</div><div class="small muted mono trunc">${esc(s.host) || 'sem hostname'}</div></div>${pend ? `<span class="badge b-warn" title="Pedida por ${esc(pend.solicitante_nome)}">${ic('clock')}Alteração pendente</span> ` : ''}<span class="badge b-acc dotb">Em uso</span></div>
     <div class="kv"><span>Serial</span><span class="mono">${esc(s.serial) || '<span class="muted">—</span>'}</span><span>Ativada em</span><span>${dateTag(s)}${s.data ? ` <span class="muted small">· ${ageTxt(ageDays(s.data))}</span>` : ''}</span>
-      ${s.prop ? `<span>Proposta</span><span>${esc(s.prop)}</span>` : ''}${s.obs ? `<span>Observação</span><span>${esc(s.obs)}</span>` : ''}</div>
+      ${s.prop ? `<span>Número do pedido</span><span>${esc(s.prop)}</span>` : ''}${s.obs ? `<span>Observação</span><span>${esc(s.obs)}</span>` : ''}</div>
     ${edit ? `<div class="slot-a"><button class="btn sm" onclick="LIC.slotForm(${s.id})">${ic('edit','sm')} Editar</button>${adm ? `<button class="btn sm" style="color:var(--bad)" onclick="LIC.confirmRelease(${s.id})">${ic('unlock','sm')} Liberar vaga</button>${resBtn}` : ''}</div>` : ''}</div>`;
 }
 
@@ -689,12 +692,27 @@ function equipCliente(serial){
   if (!rows) return null;
   return String((rows.find(emOperacao) || rows[0]).Cliente ?? '').trim() || null;
 }
-function serialCliente(inp, pickId, helpSel){
+/* Sem a base carregada (perfil sem o bloco Operação não lê equip_itens), pergunta ao banco só por este serial
+   (RPC equip_buscar_serial, 17_justificativa_obrigatorios.sql). Devolve o cliente ou null. */
+const EQS = {};
+async function equipClienteBanco(serial){
+  const u = String(serial || '').trim().toUpperCase();
+  if (S.equip || !u) return equipCliente(u);
+  if (!(u in EQS)){
+    try {
+      const rows = await rpc('equip_buscar_serial', {p_serial:u}) || [];
+      EQS[u] = rows.length ? String((rows.find(emOperacao) || rows[0]).Cliente ?? '').trim() || null : null;
+    } catch(e){ console.error('equip_buscar_serial:', e); return null; }
+  }
+  return EQS[u];
+}
+async function serialCliente(inp, pickId, helpSel){
   const sr = inp.value.trim(), h = $(helpSel); if (!h) return;
   if (!sr){ h.className = 'help'; h.textContent = ''; return; }
-  const c = equipCliente(sr);
+  const c = await equipClienteBanco(sr);
+  if (inp.value.trim() !== sr || !$('#' + pickId)) return;
   if (c){ setClient(pickId, c); h.className = 'help ok'; h.textContent = `Cliente da base de equipamentos: ${c}`; }
-  else { h.className = 'help bad'; h.textContent = S.equip ? 'Serial não encontrado na base de equipamentos. Escolha ou digite o cliente.' : (S.equipErr || 'Base de equipamentos indisponível.') + ' Escolha ou digite o cliente.'; }
+  else { h.className = 'help bad'; h.textContent = S.equip || !(sr.toUpperCase() in EQS) ? 'Serial não encontrado na base de equipamentos. Escolha ou digite o cliente.' : (S.equipErr || 'Base de equipamentos indisponível.') + ' Escolha ou digite o cliente.'; }
 }
 document.addEventListener('mousedown', e => { if (!e.target.closest('.cpick')) document.querySelectorAll('.cpick-p').forEach(x => x.classList.add('hidden')); });
 function serialOwner(serial, exceptId){
@@ -714,11 +732,13 @@ function slotForm(id){
   const m = modal({title: edit ? 'Editar máquina' : 'Ativar máquina', sub:`${s.a.email} · vaga ${s.n}`, icon: edit ? 'edit' : 'pc', body:`
     <div class="form">
       <div class="field"><label>Cliente *</label>${clientPicker('fc', s.cli)}<span class="help" id="fsc"></span></div>
-      <div class="two"><div class="field"><label>Hostname</label><input class="input mono" id="fh" value="${esc(s.host)}" placeholder="ex.: LC-NOTE-042"></div>
-        <div class="field"><label>Serial</label><input class="input mono" id="fs" value="${esc(s.serial)}" oninput="LIC.checkSerial(this,${s.id},'#fsh')" onchange="LIC.serialCliente(this,'fc','#fsc')"><span class="help" id="fsh"></span></div></div>
+      <div class="two"><div class="field"><label>Hostname *</label><input class="input mono" id="fh" value="${esc(s.host)}" placeholder="ex.: LC-NOTE-042"></div>
+        <div class="field"><label>Serial *</label><input class="input mono" id="fs" value="${esc(s.serial)}" oninput="LIC.checkSerial(this,${s.id},'#fsh')" onchange="LIC.serialCliente(this,'fc','#fsc')"><span class="help" id="fsh"></span></div></div>
       <div class="two"><div class="field"><label>Data da ativação</label><input class="input" type="date" id="fd" value="${s.data || todayIso()}" max="${todayIso()}"></div>
-        <div class="field"><label>Proposta</label><input class="input" id="fp" value="${esc(s.prop)}"></div></div>
+        <div class="field"><label>Número do pedido</label><input class="input" id="fp" value="${esc(s.prop)}"></div></div>
       <div class="field"><label>Observação</label><input class="input" id="fo" value="${esc(s.obs)}"></div>
+      ${edit && foraPrazo(s) ? `<div class="field"><label>Justificativa da alteração *</label><textarea class="input" id="fj" rows="2" placeholder="Por que esta máquina está sendo alterada?"></textarea>
+        <span class="help">Obrigatória: a máquina foi ativada há mais de 24 horas.</span></div>` : ''}
       ${edit && !isAdmin() && foraPrazo(s) ? `<div class="alert warn">${ic('clock')}<span>${S.solVaga && S.solVaga[s.id] ? 'Já existe uma alteração desta vaga aguardando aprovação do administrador.' : 'Esta máquina foi ativada há mais de 24 horas: a alteração vai para aprovação do administrador e só é aplicada depois de aprovada.'}</span></div>` : ''}
       <div class="alert err hidden" id="fe"></div>
     </div>`, foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn primary" id="fok">${edit ? 'Salvar alterações' : 'Ativar máquina'}</button>`});
@@ -729,11 +749,17 @@ async function saveSlot(id){
   const s = S.slotById[id], was = s.st === 'ativo';
   const er = t => { const x = $('#fe'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
   const cli = $('#fc').value.trim().toUpperCase(), serial = $('#fs').value.trim().toUpperCase();
+  const host = $('#fh').value.trim(), just = $('#fj') ? $('#fj').value.trim() : '';
+  ['#fh','#fs','#fj'].forEach(k => { const x = $(k); if (x) x.classList.remove('bad'); });
   if (!cli){ $('#fc-w .cpick-b').classList.add('bad'); return er('Informe o cliente.'); }
+  if (!host){ $('#fh').classList.add('bad'); return er('Informe o hostname.'); }
+  if (!serial){ $('#fs').classList.add('bad'); return er('Informe o serial.'); }
+  if ($('#fj') && !just){ $('#fj').classList.add('bad'); return er('Informe a justificativa: esta máquina foi ativada há mais de 24 horas.'); }
   const dup = serialOwner(serial, s.id);
   if (dup) return er(`O serial ${serial} já está em uso na conta ${dup.a.email} (${dup.cli}).`);
   try {
-    const r = await rpc(was ? 'editar_vaga' : 'ativar_vaga', {p_vaga:s.id, p_cliente:cli, p_hostname:$('#fh').value.trim(), p_serial:serial, p_data:$('#fd').value || null, p_proposta:$('#fp').value.trim(), p_obs:$('#fo').value.trim()});
+    const args = {p_vaga:s.id, p_cliente:cli, p_hostname:host, p_serial:serial, p_data:$('#fd').value || null, p_proposta:$('#fp').value.trim(), p_obs:$('#fo').value.trim()};
+    const r = await rpc(was ? 'editar_vaga' : 'ativar_vaga', was ? {...args, p_justificativa:just} : args);
     if (!was) clearPw([s.a.id]);
     await loadData(); closeModal();
     toast(!was ? 'Máquina ativada' : r === 'pendente' ? 'Fora do prazo de 24 h: alteração enviada para aprovação do administrador' : 'Alterações salvas');
@@ -782,7 +808,7 @@ const PAGE = 50;
 function vMaquinas(){
   $('#view').innerHTML = pageHead('Máquinas', 'Todas as máquinas com Office ativado.', `<button class="btn" onclick="LIC.exportCsv()">${ic('dl')} Exportar CSV</button>`) + `
   <div class="toolbar">
-    <div class="searchbox">${ic('search','sm')}<input class="input" type="search" placeholder="Buscar cliente, hostname, serial, conta ou proposta" value="${esc(MV.q)}" oninput="LIC.MV.q=this.value;LIC.MV.page=0;LIC.vMaqBody()"></div>
+    <div class="searchbox">${ic('search','sm')}<input class="input" type="search" placeholder="Buscar cliente, hostname, serial, conta ou número do pedido" value="${esc(MV.q)}" oninput="LIC.MV.q=this.value;LIC.MV.page=0;LIC.vMaqBody()"></div>
     <select class="input" onchange="LIC.MV.cli=this.value;LIC.MV.page=0;LIC.vMaqBody()"><option value="">Todos os clientes</option>${S.clients.map(([n,c]) => `<option value="${esc(n)}" ${MV.cli===n?'selected':''}>${esc(n)} (${c})</option>`).join('')}</select>
   </div><div id="mbody"></div>`;
   vMaqBody();
@@ -799,13 +825,13 @@ function vMaqBody(){
   const L = maqList(), pg = L.slice(MV.page*PAGE, (MV.page+1)*PAGE);
   const th = (k, l, cls='') => `<th class="sort ${cls}" onclick="LIC.mSort('${k}')">${l}${MV.sort===k ? `<span class="arr">${MV.dir>0?'↑':'↓'}</span>` : ''}</th>`;
   $('#mbody').innerHTML = `<div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>${th('cli','Cliente')}${th('host','Hostname')}${th('serial','Serial','hide-sm')}${th('conta','Conta')}${th('data','Ativada em')}</tr></thead><tbody>
-  ${pg.map(s => `<tr class="click" onclick="LIC.openAccount(${s.a.id})"><td><div class="strong">${esc(s.cli)}</div>${s.prop ? `<div class="sub">Proposta ${esc(s.prop)}</div>` : ''}</td>
+  ${pg.map(s => `<tr class="click" onclick="LIC.openAccount(${s.a.id})"><td><div class="strong">${esc(s.cli)}</div>${s.prop ? `<div class="sub">Pedido ${esc(s.prop)}</div>` : ''}</td>
     <td class="mono">${esc(s.host) || '<span class="muted">—</span>'}</td><td class="mono hide-sm">${esc(s.serial) || '<span class="muted">—</span>'}</td>
     <td class="mono small nowrap">${slotRef(s)}</td><td class="nowrap">${dateTag(s)}</td></tr>`).join('') || `<tr><td colspan="5">${emptyBox('search','Nada encontrado','Ajuste a busca ou os filtros.')}</td></tr>`}
   </tbody></table></div>${pager(L.length, MV.page, PAGE, 'mPage')}</div>`;
 }
 function exportCsv(){
-  const rows = [['Cliente','Hostname','Serial','Conta','Vaga','Data ativação','Proposta','Observação']].concat(
+  const rows = [['Cliente','Hostname','Serial','Conta','Vaga','Data ativação','Número do pedido','Observação']].concat(
     maqList().map(s => [s.cli, s.host, s.serial, s.a.email, s.n, s.data ? fmt(s.data) : '', s.prop, s.obs]));
   const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(';')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
@@ -882,8 +908,8 @@ function drawPlan(){
             <button class="ibtn" title="${NA.pw && NA.pw[s.a.id] != null ? 'Ocultar' : 'Mostrar'} senha" onclick="LIC.planPw(this,${s.a.id})">${ic(NA.pw && NA.pw[s.a.id] != null ? 'eyeoff' : 'eye','sm')}</button>
             <button class="ibtn" title="Copiar senha" onclick="LIC.planPwCopy(this,${s.a.id})">${ic('copy','sm')}</button></div>
           ${p.type === 'livre' ? '<span class="badge b-ok dotb">vaga livre</span>' : `<span class="badge b-warn">${ic('rec')}reciclar</span> <span class="small muted">${esc(s.cli)} · <span class="mono">${esc(s.host||'sem hostname')}</span> · ${fmt(s.data)}${s.data ? ` (${ageTxt(ageDays(s.data))})` : ''}</span>`}</div>
-        <input class="input mono" id="ph${i}" placeholder="Hostname" value="${esc(p.host)}" oninput="LIC.NA.plan[${i}].host=this.value">
-        <div class="field"><input class="input mono" id="ps${i}" placeholder="Serial" value="${esc(p.serial)}" oninput="LIC.NA.plan[${i}].serial=this.value;LIC.checkSerial(this,null,'#psh${i}')"><span class="help" id="psh${i}"></span></div>
+        <input class="input mono" id="ph${i}" placeholder="Hostname *" value="${esc(p.host)}" oninput="LIC.NA.plan[${i}].host=this.value">
+        <div class="field"><input class="input mono" id="ps${i}" placeholder="Serial *" value="${esc(p.serial)}" oninput="LIC.NA.plan[${i}].serial=this.value;LIC.checkSerial(this,null,'#psh${i}')"><span class="help" id="psh${i}"></span></div>
       </div>`; }).join('')}
       <div class="alert err hidden" id="pe" style="margin-top:10px"></div>
     </div>
@@ -920,8 +946,12 @@ async function planPwCopy(btn, id){ const t = await planPwGet(btn, id); if (t !=
 async function confirmPlan(btn){
   const er = t => { const x = $('#pe'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
   const seen = new Set();
+  NA.plan.forEach((p, i) => { $('#ph' + i).classList.toggle('bad', !p.host.trim()); $('#ps' + i).classList.toggle('bad', !p.serial.trim()); });
+  if (!NA.cli) return er('Informe o cliente.');
+  const falta = NA.plan.findIndex(p => !p.host.trim() || !p.serial.trim());
+  if (falta >= 0){ const p = NA.plan[falta]; (p.host.trim() ? $('#ps' + falta) : $('#ph' + falta)).focus(); return er(`Informe o ${p.host.trim() ? 'serial' : 'hostname'} da máquina ${falta + 1} (${S.slotById[p.id].a.email} vaga ${S.slotById[p.id].n}).`); }
   for (const p of NA.plan){
-    const sr = p.serial.trim().toUpperCase(); if (!sr) continue;
+    const sr = p.serial.trim().toUpperCase();
     if (seen.has(serialKey(sr))) return er(`O serial ${sr} foi digitado duas vezes.`);
     const o = serialOwner(sr, null);
     if (o && !(p.type === 'reciclar' && o.id === p.id)) return er(`O serial ${sr} já está em uso na conta ${o.a.email} (${o.cli}).`);
