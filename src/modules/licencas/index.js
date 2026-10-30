@@ -380,14 +380,15 @@ function perfisConta(id){
   });
 }
 // Lote: escolhe os perfis e marca as contas (com busca e "marcar as filtradas").
-const PL = {q:'', sel:new Set()};
+const PL = {q:'', g:'', sel:new Set()};
 function perfisLote(){
   if (!isAdmin()) return;
-  PL.q = ''; PL.sel = new Set();
+  PL.q = ''; PL.g = ''; PL.sel = new Set();
   const m = modal({title:'Visibilidade das contas em lote', sub:'Substitui os perfis das contas marcadas', icon:'users', wide:true, body:`<div class="form">
     <div class="field"><label>Visível para</label><div style="display:flex;gap:16px;flex-wrap:wrap">${perfisChecks([], 'plp')}</div>
       <span class="help">Sem nenhum marcado, as contas voltam a ser visíveis para todos os perfis.</span></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="searchbox grow">${ic('search','sm')}<input class="input" type="search" id="plq" placeholder="Filtrar contas por e-mail ou cliente" oninput="LIC.PL.q=this.value;LIC.perfisLoteLista()"></div>
+      <select class="input" style="width:auto" onchange="LIC.PL.g=this.value;LIC.perfisLoteLista()"><option value="">Todos os grupos</option><option value="*">Sem restrição (todos veem)</option>${PERFIS_CONTA.map(k => `<option value="${k}">Visível para ${esc(PERFIL[k] || k)}</option>`).join('')}</select>
       <button class="btn sm" onclick="LIC.perfisLoteTodas(true)">Marcar filtradas</button><button class="btn sm" onclick="LIC.perfisLoteTodas(false)">Desmarcar</button></div>
     <div id="pll" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
     <div class="alert err hidden" id="plerr"></div></div>`,
@@ -401,14 +402,14 @@ function perfisLote(){
   });
   setTimeout(() => $('#plq').focus(), 50);
 }
-const plFiltradas = () => { const q = norm(PL.q); return S.accounts.filter(a => !q || norm(a.email + ' ' + a.slots.map(s => s.cli).join(' ')).includes(q)); };
+const plFiltradas = () => { const q = norm(PL.q); return S.accounts.filter(a => (!PL.g || (PL.g === '*' ? !a.perfis.length : a.perfis.includes(PL.g))) && (!q || norm(a.email + ' ' + a.slots.map(s => s.cli).join(' ')).includes(q))); };
 function perfisLoteLista(){
   const L = plFiltradas();
   $('#pll').innerHTML = L.map(a => `<label class="mini-row" style="gap:10px"><input type="checkbox" ${PL.sel.has(a.id) ? 'checked' : ''} onchange="LIC.perfisLoteUm(${a.id},this.checked)">
     <div class="mr-m"><div class="mr-t mono trunc">${esc(a.email)}</div><div class="mr-s trunc">${esc(perfisTxt(a.perfis))}</div></div></label>`).join('') || `<div class="small muted" style="padding:12px">Nenhuma conta encontrada.</div>`;
-  $('#pln').textContent = `${plural(PL.sel.size,'conta marcada','contas marcadas')}`;
+  $('#pln').textContent = `${plural(L.length,'conta listada','contas listadas')} · ${plural(PL.sel.size,'conta marcada','contas marcadas')}`;
 }
-function perfisLoteUm(id, on){ on ? PL.sel.add(id) : PL.sel.delete(id); $('#pln').textContent = `${plural(PL.sel.size,'conta marcada','contas marcadas')}`; }
+function perfisLoteUm(id, on){ on ? PL.sel.add(id) : PL.sel.delete(id); $('#pln').textContent = `${plural(plFiltradas().length,'conta listada','contas listadas')} · ${plural(PL.sel.size,'conta marcada','contas marcadas')}`; }
 function perfisLoteTodas(on){ plFiltradas().forEach(a => on ? PL.sel.add(a.id) : PL.sel.delete(a.id)); perfisLoteLista(); }
 
 function newAccountForm(){
