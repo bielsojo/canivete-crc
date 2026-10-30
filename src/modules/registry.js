@@ -26,6 +26,7 @@ export const NAV = [
   {path:'licencas/maquinas', mod:'licencas', sub:'maquinas', title:'Máquinas', icon:'pc', group:'Licenças Office', bloco:'licencas'},
   {path:'licencas/ativar', mod:'licencas', sub:'ativar', title:'Nova ativação', icon:'plusc', group:'Licenças Office', bloco:'licencas'},
   {path:'licencas/reciclar', mod:'licencas', sub:'reciclar', title:'Reciclagem', icon:'rec', group:'Licenças Office', bloco:'licencas'},
+  {path:'licencas/alertas', mod:'licencas', sub:'alertas', title:'Alertas', icon:'alert', group:'Licenças Office', bloco:'licencas', admin:true},
   {path:'licencas/qualidade', mod:'licencas', sub:'qualidade', title:'Qualidade dos dados', icon:'shield', group:'Licenças Office', bloco:'licencas', admin:true},
   {path:'licencas/historico', mod:'licencas', sub:'historico', title:'Histórico', icon:'clock', group:'Licenças Office', bloco:'licencas'},
   {path:'usuarios', mod:'usuarios', title:'Usuários', icon:'users', group:'Administração', admin:true},

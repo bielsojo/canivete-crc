@@ -117,16 +117,28 @@ async function solVista(btn, id){
     catch(e){ toast(errMsg(e), 'err'); }
   });
 }
-// Alertas de senha usada sem ativação (só administrador; sem a tabela, fica vazio).
+// Alertas do administrador (sem a tabela, fica vazio): senha usada sem ativação e serial duplicado ativado (19_alertas_serial.sql).
 async function loadAlerts(){
-  if (!isAdmin()){ S.alerts = []; return; }
-  const {data, error} = await sb.from('alertas_senha').select('id,quando,usuario_nome,conta_email,justificativa').is('lido_em', null).order('quando', {ascending:false});
-  if (error) console.error('alertas_senha:', error);
-  S.alerts = data || [];
+  if (!isAdmin()){ S.alerts = []; S.serAlerts = []; return; }
+  const [pw, ser] = await Promise.all([
+    sb.from('alertas_senha').select('id,quando,usuario_nome,conta_email,justificativa').is('lido_em', null).order('quando', {ascending:false}),
+    sb.from('alertas_serial').select('id,quando,usuario_nome,serial,conta_email,vaga_n,cliente,hostname,conflitos').is('lido_em', null).order('quando', {ascending:false})
+  ]);
+  if (pw.error) console.error('alertas_senha:', pw.error);
+  if (ser.error) console.error('alertas_serial:', ser.error);
+  S.alerts = pw.data || []; S.serAlerts = ser.data || [];
 }
+// Alertas pendentes do administrador: senhas, seriais duplicados e alterações aguardando aprovação.
+const alertasN = () => isAdmin() ? (S.alerts || []).length + (S.serAlerts || []).length + (S.sol || []).filter(x => x.status === 'pendente').length : 0;
 async function alertaLido(btn, id){
   await busy(btn, async () => {
     try { await rpc('marcar_alerta_lido', {p_id:id}); S.alerts = S.alerts.filter(x => x.id !== id); renderView(); }
+    catch(e){ toast(errMsg(e), 'err'); }
+  });
+}
+async function alertaSerialLido(btn, id){
+  await busy(btn, async () => {
+    try { await rpc('marcar_alerta_serial_lido', {p_id:id}); S.serAlerts = S.serAlerts.filter(x => x.id !== id); renderView(); }
     catch(e){ toast(errMsg(e), 'err'); }
   });
 }
@@ -230,11 +242,7 @@ function vPainel(){
   const hello = hi < 12 ? 'Bom dia' : hi < 18 ? 'Boa tarde' : 'Boa noite';
   $('#view').innerHTML = pageHead(`${hello}, ${esc(ctx.me.nome.split(' ')[0])}`, 'Resumo das licenças Office neste momento.',
     canEdit() ? `<button class="btn primary" onclick="LIC.go('ativar')">${ic('plus')} Nova ativação</button>` : '') + `
-  ${isAdmin() && S.alerts && S.alerts.length ? `<div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div class="card-h"><h3>Senhas usadas sem ativação</h3><span class="sub">${plural(S.alerts.length,'justificativa pendente','justificativas pendentes')}</span></div><div class="card-b"><div class="mini">
-    ${S.alerts.map(x => `<div class="mini-row" style="cursor:default"><div class="mr-m"><div class="small"><b>${esc(x.usuario_nome || 'Sem nome')}</b> · <span class="mono">${esc(x.conta_email)}</span></div><div class="mr-s">${esc(x.justificativa)}</div></div>
-      <span class="mr-s nowrap">${relTime(x.quando)}</span><button class="btn sm" onclick="LIC.alertaLido(this,${x.id})">${ic('check','sm')} Ciente</button></div>`).join('')}
-  </div></div></div>` : ''}
-  ${solCard()}
+  ${isAdmin() ? (alertasN() ? `<div class="alert warn" style="margin-bottom:16px">${ic('alert')}<div><b>${plural(alertasN(),'alerta pendente','alertas pendentes')}</b>. <a href="#/licencas/alertas">Ver alertas</a></div></div>` : '') : solCard()}
   <div class="grid kpis">
     ${kpi('key','var(--text-2)','var(--surface-2)','Contas de e-mail', nf(A.length), `${nf(T.t)} vagas no total`)}
     ${kpi('pc','var(--accent)','var(--accent-soft)','Máquinas ativas', nf(T.u), `${pct(T.u,T.t)}% da capacidade`)}
@@ -280,6 +288,34 @@ async function loadRecent(){
 function goCli(i){ MV.cli = S.clients[i][0]; MV.page = 0; go('maquinas'); }
 
 /* =====================================================================
+   ALERTAS (só administrador): tudo que pede atenção, separado do painel
+   ===================================================================== */
+function vAlertas(){
+  if (!isAdmin()){ go('painel'); return; }
+  $('#view').innerHTML = pageHead('Alertas', 'Avisos que precisam da atenção do administrador, centralizados aqui.') +
+    (alertasN() ? serCard() + solCard() + pwCard() : `<div class="tbl-wrap">${emptyBox('check','Nenhum alerta pendente','Tudo em dia.')}</div>`);
+}
+const vinc = c => `<span class="mono">${esc(c.conta_email)}</span> vaga ${c.vaga} · ${esc(c.cliente || 'Sem cliente')} · <span class="mono">${esc(c.hostname || 'sem hostname')}</span>`;
+function serCard(){
+  const L = S.serAlerts || []; if (!L.length) return '';
+  return `<div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--bad) 45%,var(--line))"><div class="card-h"><h3>Serial já cadastrado em outra licença</h3><span class="sub">${plural(L.length,'alerta','alertas')}</span></div><div class="card-b"><div class="mini">
+    ${L.map(x => `<div class="mini-row" style="cursor:default;align-items:flex-start"><div class="mr-m">
+      <div class="small"><b>${esc(x.usuario_nome || 'Sem nome')}</b> ativou o serial <b class="mono">${esc(x.serial)}</b> mesmo já cadastrado · ${dtHora(x.quando)}</div>
+      <div class="small" style="margin-top:4px"><span class="muted">Nova ativação:</span> ${vinc({conta_email:x.conta_email, vaga:x.vaga_n, cliente:x.cliente, hostname:x.hostname})}</div>
+      <div class="small muted" style="margin-top:4px">Licenças que deram o alerta:</div>
+      ${(x.conflitos || []).map(c => `<div class="small">• ${vinc(c)}</div>`).join('')}</div>
+      <button class="btn sm" onclick="LIC.alertaSerialLido(this,${x.id})">${ic('check','sm')} Ciente</button></div>`).join('')}
+  </div></div></div>`;
+}
+function pwCard(){
+  const L = S.alerts || []; if (!L.length) return '';
+  return `<div class="card" style="margin-bottom:16px;border-color:color-mix(in srgb,var(--warn) 45%,var(--line))"><div class="card-h"><h3>Senhas usadas sem ativação</h3><span class="sub">${plural(L.length,'justificativa pendente','justificativas pendentes')}</span></div><div class="card-b"><div class="mini">
+    ${L.map(x => `<div class="mini-row" style="cursor:default"><div class="mr-m"><div class="small"><b>${esc(x.usuario_nome || 'Sem nome')}</b> · <span class="mono">${esc(x.conta_email)}</span></div><div class="mr-s">${esc(x.justificativa)}</div></div>
+      <span class="mr-s nowrap">${relTime(x.quando)}</span><button class="btn sm" onclick="LIC.alertaLido(this,${x.id})">${ic('check','sm')} Ciente</button></div>`).join('')}
+  </div></div></div>`;
+}
+
+/* =====================================================================
    CONTAS
    ===================================================================== */
 const CV = {q:'', f:'todas', mode:(() => { try { return localStorage.getItem('contasModo') || 'grade'; } catch(e){ return 'grade'; } })()};
@@ -301,13 +337,38 @@ function vContas(){
     <div class="chips" id="cchips">${chips.map(([k,l]) => `<button class="chip ${CV.f===k?'on':''}" onclick="LIC.CV.f='${k}';LIC.vContas()">${l}<span class="n">${S.accounts.filter(a => contasFilter(a,k)).length}</span></button>`).join('')}</div>
     <div class="grow"></div>
     <div class="chips"><button class="chip ${CV.mode==='grade'?'on':''}" title="Grade" onclick="LIC.setMode('grade')">${ic('grid','sm')}</button><button class="chip ${CV.mode==='lista'?'on':''}" title="Lista" onclick="LIC.setMode('lista')">${ic('list','sm')}</button></div>
-  </div><div id="cbody"></div>`;
+  </div><div id="cmaq"></div><div id="cbody"></div>`;
   vContasBody();
+}
+/* Busca por serial ou hostname em todas as contas (RPC buscar_maquina, 19_alertas_serial.sql),
+   inclusive as que o perfil não vê: mostra a quais contas a máquina está vinculada. */
+let CMT = null;
+function buscaMaq(){
+  clearTimeout(CMT);
+  const t = CV.q.trim(), el = $('#cmaq'); if (!el) return;
+  if (t.length < 3){ el.innerHTML = ''; return; }
+  CMT = setTimeout(async () => {
+    let rows;
+    try { rows = await rpc('buscar_maquina', {p_termo:t}) || []; } catch(e){ console.error('buscar_maquina:', e); return; }
+    const box = $('#cmaq'); if (!box || CV.q.trim() !== t) return;
+    box.innerHTML = rows.length ? maqVinculos(t, rows) : '';
+  }, 350);
+}
+function maqVinculos(t, rows){
+  const byEmail = Object.fromEntries(S.accounts.map(a => [a.email, a.id]));
+  const ser = rows.filter(r => r.serial && serialKey(r.serial) === serialKey(t));
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Máquinas vinculadas</h3><span class="sub">serial ou hostname · ${plural(rows.length,'vaga','vagas')}</span></div><div class="card-b">
+    ${ser.length > 1 ? `<div class="alert err" style="margin-bottom:10px">${ic('alert')}<span>O serial <b class="mono">${esc(t.toUpperCase())}</b> está ativo em <b>${ser.length} vagas</b> (duplicado).</span></div>` : ''}
+    <div class="mini">${rows.map(r => { const id = r.visivel ? byEmail[r.conta_email] : null; return `<div class="mini-row" ${id ? `onclick="LIC.openAccount(${id})"` : 'style="cursor:default"'}>
+      <div class="mr-m"><div class="mr-t trunc">${esc(r.cliente || 'Sem cliente')}</div><div class="mr-s trunc"><span class="mono">${esc(r.hostname || 'sem hostname')}</span> · <span class="mono">${esc(r.serial || 'sem serial')}</span> · <span class="mono">${esc(r.conta_email)}</span> vaga ${r.vaga} · ${fmt(r.data_ativacao)}</div></div>
+      ${r.visivel ? '<span class="badge b-acc dotb">Em uso</span>' : `<span class="badge b-res" title="A conta está liberada só para outros perfis">${ic('lock')}Outro perfil</span>`}</div>`; }).join('')}</div></div></div>`;
 }
 function setMode(m){ CV.mode = m; try { localStorage.setItem('contasModo', m); } catch(e){} vContas(); }
 function vContasBody(){
-  const q = norm(CV.q);
-  const L = S.accounts.filter(a => contasFilter(a, CV.f) && (!q || norm(a.email + ' ' + a.slots.map(s => [s.cli,s.host,s.serial].join(' ')).join(' ')).includes(q)));
+  const q = norm(CV.q), sk = serialKey(CV.q);
+  buscaMaq();
+  const L = S.accounts.filter(a => contasFilter(a, CV.f) && (!q || norm(a.email + ' ' + a.slots.map(s => [s.cli,s.host,s.serial].join(' ')).join(' ')).includes(q)
+    || a.slots.some(s => s.st === 'ativo' && s.serial && serialKey(s.serial) === sk)));
   const clis = a => [...new Set(a.slots.filter(s => s.st==='ativo').map(s => s.cli))];
   if (!L.length){ $('#cbody').innerHTML = `<div class="tbl-wrap">${emptyBox('search','Nenhuma conta encontrada','Tente outro termo ou filtro.')}</div>`; return; }
   if (CV.mode === 'grade'){
@@ -721,6 +782,18 @@ function serialOwner(serial, exceptId){
   const u = serialKey(serial);
   return S.active.find(s => s.id !== exceptId && s.serial && serialKey(s.serial) === u) || null;
 }
+/* Serial já ativo em outra licença: busca em todas as contas (RPC buscar_maquina); sem a RPC, só nas carregadas.
+   exceptId = vaga que deixa de contar (a própria vaga ou a que será reciclada). */
+async function serialConflitos(sr, exceptId){
+  let rows;
+  try { rows = (await rpc('buscar_maquina', {p_termo:sr}) || []).filter(r => r.serial && serialKey(r.serial) === serialKey(sr)); }
+  catch(e){ rows = S.active.filter(s => s.serial && serialKey(s.serial) === serialKey(sr)).map(s => ({conta_email:s.a.email, vaga:s.n, cliente:s.cli, hostname:s.host})); }
+  const ex = exceptId && S.slotById[exceptId];
+  return ex ? rows.filter(r => !(r.conta_email === ex.a.email && r.vaga === ex.n)) : rows;
+}
+const conflitosHtml = L => L.map(([sr, rows]) => `<div style="margin-top:8px">O serial <b class="mono">${esc(sr)}</b> já está cadastrado em:
+  <ul class="small" style="margin:4px 0 0;padding-left:18px">${rows.map(r => `<li>${vinc(r)}</li>`).join('')}</ul></div>`).join('')
+  + `<div class="small muted" style="margin-top:10px">Se ativar assim mesmo, o administrador recebe um alerta com o serial e essas licenças.</div>`;
 function checkSerial(inp, exceptId, helpSel){
   const o = serialOwner(inp.value.trim(), exceptId), h = $(helpSel);
   inp.classList.toggle('bad', !!o);
@@ -746,9 +819,9 @@ function slotForm(id){
   $('#fok', m).onclick = e => busy(e.currentTarget, () => saveSlot(id));
   setTimeout(() => $('#fc-w .cpick-b').focus(), 50);
 }
-async function saveSlot(id){
+async function saveSlot(id, forcar){
   const s = S.slotById[id], was = s.st === 'ativo';
-  const er = t => { const x = $('#fe'); x.classList.remove('hidden'); x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
+  const er = t => { const x = $('#fe'); x.className = 'alert err'; x.innerHTML = ic('alert') + `<span>${esc(t)}</span>`; };
   const cli = $('#fc').value.trim().toUpperCase(), serial = $('#fs').value.trim().toUpperCase();
   const host = $('#fh').value.trim(), just = $('#fj') ? $('#fj').value.trim() : '';
   ['#fh','#fs','#fj'].forEach(k => { const x = $(k); if (x) x.classList.remove('bad'); });
@@ -756,11 +829,24 @@ async function saveSlot(id){
   if (!host){ $('#fh').classList.add('bad'); return er('Informe o hostname.'); }
   if (!serial){ $('#fs').classList.add('bad'); return er('Informe o serial.'); }
   if ($('#fj') && !just){ $('#fj').classList.add('bad'); return er('Informe a justificativa: esta máquina foi ativada há mais de 24 horas.'); }
-  const dup = serialOwner(serial, s.id);
-  if (dup) return er(`O serial ${serial} já está em uso na conta ${dup.a.email} (${dup.cli}).`);
+  if (was){
+    const dup = serialOwner(serial, s.id);
+    if (dup) return er(`O serial ${serial} já está em uso na conta ${dup.a.email} (${dup.cli}).`);
+  } else if (!forcar){
+    // Serial já cadastrado em outra licença: pergunta antes de ativar (Sim avisa o administrador).
+    const conf = await serialConflitos(serial, s.id);
+    if (conf.length){
+      const x = $('#fe'); x.className = 'alert warn';
+      x.innerHTML = ic('alert') + `<div><b>Serial já cadastrado em outra licença. Quer ativar assim mesmo?</b>${conflitosHtml([[serial, conf]])}
+        <div style="display:flex;gap:8px;margin-top:10px"><button class="btn sm" onclick="LIC.$('#fe').className='alert err hidden'">Não</button>
+        <button class="btn sm primary" onclick="LIC.busy(this,()=>LIC.saveSlot(${id},true))">Sim, ativar</button></div></div>`;
+      return;
+    }
+  }
   try {
     const args = {p_vaga:s.id, p_cliente:cli, p_hostname:host, p_serial:serial, p_data:$('#fd').value || null, p_proposta:$('#fp').value.trim(), p_obs:$('#fo').value.trim()};
-    const r = await rpc(was ? 'editar_vaga' : 'ativar_vaga', was ? {...args, p_justificativa:just} : args);
+    const r = await rpc(was ? 'editar_vaga' : 'ativar_vaga', was ? {...args, p_justificativa:just} : {...args, p_forcar:!!forcar});
+    if (forcar && isAdmin()) await loadAlerts();
     if (!was) clearPw([s.a.id]);
     await loadData(); closeModal();
     toast(!was ? 'Máquina ativada' : r === 'pendente' ? 'Fora do prazo de 24 h: alteração enviada para aprovação do administrador' : 'Alterações salvas');
@@ -954,9 +1040,20 @@ async function confirmPlan(btn){
   for (const p of NA.plan){
     const sr = p.serial.trim().toUpperCase();
     if (seen.has(serialKey(sr))) return er(`O serial ${sr} foi digitado duas vezes.`);
-    const o = serialOwner(sr, null);
-    if (o && !(p.type === 'reciclar' && o.id === p.id)) return er(`O serial ${sr} já está em uso na conta ${o.a.email} (${o.cli}).`);
     seen.add(serialKey(sr));
+  }
+  // Serial já cadastrado em outra licença: pergunta antes de ativar (Sim avisa o administrador).
+  const conf = [];
+  for (const p of NA.plan){
+    const sr = p.serial.trim().toUpperCase(), rows = await serialConflitos(sr, p.type === 'reciclar' ? p.id : null);
+    p.forcar = rows.length > 0;
+    if (rows.length) conf.push([sr, rows]);
+  }
+  if (conf.length){
+    const b = await confirmBox({title:'Serial já cadastrado em outra licença', tone:'warn', icon:'alert', ok:'Sim, ativar', no:'Não',
+      text:`<b>Quer ativar assim mesmo?</b>${conflitosHtml(conf)}`});
+    closeModal();
+    if (!b) return;
   }
   const rec = NA.plan.filter(p => p.type === 'reciclar');
   if (rec.length){
@@ -966,10 +1063,11 @@ async function confirmPlan(btn){
     if (!b) return;
     closeModal();
   }
-  const items = NA.plan.map(p => ({vaga_id:p.id, reciclar:p.type === 'reciclar', cliente:NA.cli, hostname:p.host.trim(), serial:p.serial.trim().toUpperCase(), data:NA.data}));
+  const items = NA.plan.map(p => ({vaga_id:p.id, reciclar:p.type === 'reciclar', cliente:NA.cli, hostname:p.host.trim(), serial:p.serial.trim().toUpperCase(), data:NA.data, forcar:!!p.forcar}));
   await busy(btn, async () => {
     try {
       const n = await rpc('ativar_lote', {p_itens:items});
+      if (isAdmin() && items.some(i => i.forcar)) await loadAlerts();
       clearPw(items.map(i => S.slotById[i.vaga_id].a.id));
       await loadData();
       const ids = items.map(i => i.vaga_id);
@@ -1114,11 +1212,12 @@ async function loadHist(){
 /* =====================================================================
    INTEGRAÇÃO COM O SHELL
    ===================================================================== */
-const VIEWS = {painel:vPainel, contas:vContas, maquinas:vMaquinas, ativar:vAtivar, reciclar:vReciclar, qualidade:vQualidade, historico:vHistorico};
+const VIEWS = {painel:vPainel, contas:vContas, maquinas:vMaquinas, ativar:vAtivar, reciclar:vReciclar, alertas:vAlertas, qualidade:vQualidade, historico:vHistorico};
 function renderView(){
   if (!S.mounted || !$('#view')) return;
   ctx.setBadge('licencas/qualidade', S.qn || 0);
-  ctx.setBadge('licencas/painel', (S.alerts || []).length + (S.sol || []).filter(x => isAdmin() ? x.status === 'pendente' : x.status !== 'pendente').length);
+  ctx.setBadge('licencas/alertas', alertasN());
+  ctx.setBadge('licencas/painel', isAdmin() ? 0 : (S.sol || []).filter(x => x.status !== 'pendente').length);
   (VIEWS[S.view] || vPainel)();
 }
 function updateSync(){ const e = $('#lsync'); if (e && S.loadedAt) e.textContent = 'Atualizado às ' + timeHM(S.loadedAt); }
@@ -1156,9 +1255,9 @@ export default {
     let reab = null; try { reab = +sessionStorage.getItem('canivete:abrirConta') || null; sessionStorage.removeItem('canivete:abrirConta'); } catch(e){}
     if (reab && S.byId[reab]) S.reopen = reab;
     if (S.reopen){ openAccount(S.reopen); S.reopen = null; }
-    else if (isAdmin() && S.alerts && S.alerts.length && !S.alertToast){ S.alertToast = true; toast(`${plural(S.alerts.length,'senha usada','senhas usadas')} sem ativação: veja o Painel`, 'err'); }
-    const solN = (S.sol || []).filter(x => isAdmin() ? x.status === 'pendente' : x.status !== 'pendente').length;
-    if (solN && !S.solToast){ S.solToast = true; setTimeout(() => toast(isAdmin() ? `${plural(solN,'alteração aguarda','alterações aguardam')} aprovação: veja o Painel` : `${plural(solN,'solicitação sua foi decidida','solicitações suas foram decididas')}: veja o Painel`), 1500); }
+    else if (alertasN() && !S.alertToast){ S.alertToast = true; toast(`${plural(alertasN(),'alerta pendente','alertas pendentes')}: veja Alertas`, 'err'); }
+    const solN = isAdmin() ? 0 : (S.sol || []).filter(x => x.status !== 'pendente').length;
+    if (solN && !S.solToast){ S.solToast = true; setTimeout(() => toast(`${plural(solN,'solicitação sua foi decidida','solicitações suas foram decididas')}: veja o Painel`), 1500); }
     window.addEventListener('focus', onFocus);
     window.addEventListener('canivete:esc', onEsc);
     ctx.registerSearch('licencas', search);
@@ -1172,4 +1271,4 @@ export default {
   }
 };
 
-Object.assign(LIC, {decidirSol,solVista,resetarConta,verificarSerial,PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});
+Object.assign(LIC, {alertaSerialLido,vAlertas,decidirSol,solVista,resetarConta,verificarSerial,PL,perfisConta,perfisLote,perfisLoteLista,perfisLoteTodas,perfisLoteUm,alertaLido,leaveDrawer,pwGuard,ACOES,CV,HV,MS,MV,NA,PAGE,PW,QV,RV,SEL,TRUST,cellsHtml,changePwForm,checkSerial,closeDrawer,cpKey,cpPick,cpRender,cpToggle,cnt,computeDerived,confirmBulk,confirmPlan,confirmRelease,contasFilter,copyPw,dateTag,drawAccount,drawPlan,drawSelbar,dtBR,excluirConta,exportCsv,fetchPw,goCli,hPage,kpi,loadData,loadHist,loadMs,loadPlanPws,loadRecent,mPage,mSort,makePlan,maqList,msHtml,newAccountForm,openAccount,pager,planPw,planPwCopy,planPwGet,qPage,rPage,recList,reload,reservarVaga,saveSlot,selOne,selPage,serialCliente,serialOwner,setMode,slotCard,slotForm,slotRef,statusBadges,tirarReserva,togglePw,vAtivar,vContas,vContasBody,vHistorico,vMaqBody,vMaquinas,vPainel,vQualBody,vQualidade,vRecBody,vReciclar, S, $, ic, copy, busy, closeModal, go, reload, toast});

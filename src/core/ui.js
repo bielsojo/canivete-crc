@@ -124,10 +124,10 @@ export function modal({title, sub='', icon='', tone='acc', body='', foot='', wid
   return m;
 }
 export function closeModal(){ ['#mdl','#mscrim'].forEach(s => { const e = $(s); if (e) e.remove(); }); }
-export function confirmBox({title, text, ok='Confirmar', tone='acc', icon='info'}){
+export function confirmBox({title, text, ok='Confirmar', no='Cancelar', tone='acc', icon='info'}){
   return new Promise(res => {
     const m = modal({title, icon, tone, body:`<div style="color:var(--text-2)">${text}</div>`,
-      foot:`<button class="btn" id="cbno">Cancelar</button><button class="btn ${tone==='bad'?'danger':'primary'}" id="cbok">${ok}</button>`});
+      foot:`<button class="btn" id="cbno">${no}</button><button class="btn ${tone==='bad'?'danger':'primary'}" id="cbok">${ok}</button>`});
     $('#cbno', m).onclick = () => { closeModal(); res(null); };
     $('#cbok', m).onclick = e => res(e.currentTarget);
     $('.modal-h [data-close]', m).addEventListener('click', () => res(null));
