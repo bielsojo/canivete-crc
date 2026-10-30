@@ -388,7 +388,7 @@ function perfisLote(){
     <div class="field"><label>Visível para</label><div style="display:flex;gap:16px;flex-wrap:wrap">${perfisChecks([], 'plp')}</div>
       <span class="help">Sem nenhum marcado, as contas voltam a ser visíveis para todos os perfis.</span></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="searchbox grow">${ic('search','sm')}<input class="input" type="search" id="plq" placeholder="Filtrar contas por e-mail ou cliente" oninput="LIC.PL.q=this.value;LIC.perfisLoteLista()"></div>
-      <select class="input" style="width:auto" onchange="LIC.PL.g=this.value;LIC.perfisLoteLista()"><option value="">Todos os grupos</option><option value="*">Sem restrição (todos veem)</option>${PERFIS_CONTA.map(k => `<option value="${k}">Visível para ${esc(PERFIL[k] || k)}</option>`).join('')}</select>
+      <select class="input" style="width:auto" onchange="LIC.PL.g=this.value;LIC.perfisLoteLista()"><option value="">Todos os grupos</option><option value="*">Sem grupo</option>${PERFIS_CONTA.map(k => `<option value="${k}">Visível para ${esc(PERFIL[k] || k)}</option>`).join('')}</select>
       <button class="btn sm" onclick="LIC.perfisLoteTodas(true)">Marcar filtradas</button><button class="btn sm" onclick="LIC.perfisLoteTodas(false)">Desmarcar</button></div>
     <div id="pll" style="max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>
     <div class="alert err hidden" id="plerr"></div></div>`,
