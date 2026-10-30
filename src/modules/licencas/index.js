@@ -25,7 +25,7 @@ const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
 const serialKey = v => { const u = String(v || '').trim().toUpperCase(); return u.length > 1 && u[0] === 'S' ? u.slice(1) : u; };
 // Perfis que o admin pode escolher para ver uma conta (admin sempre vê todas). Lista vazia = todos.
 const PERFIS_CONTA = ['operador', 'logistica', 'consulta'];
-const perfisTxt = p => p && p.length ? p.map(k => PERFIL[k] || k).join(', ') : 'Todos os perfis';
+const perfisTxt = p => p && p.length ? p.map(k => PERFIL[k] || k).join(', ') : 'Sem grupo (só administrador)';
 
 /* =====================================================================
    DADOS
@@ -370,7 +370,7 @@ async function salvarPerfis(ids, perfis){
 function perfisConta(id){
   const a = S.byId[id]; if (!a || !isAdmin()) return;
   const m = modal({title:'Quem vê esta conta?', sub:a.email, icon:'users', body:`<div class="form">
-    <div class="small muted">Marque os perfis que podem ver a conta, as vagas e a senha. Sem nenhum marcado, todos os perfis veem. Administrador sempre vê.</div>
+    <div class="small muted">Marque os perfis que podem ver a conta, as vagas e a senha. Sem nenhum marcado, só o administrador vê. Administrador sempre vê.</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap">${perfisChecks(a.perfis, 'pc1')}</div>
     <div class="alert err hidden" id="pcerr"></div></div>`,
     foot:`<button class="btn" onclick="LIC.closeModal()">Cancelar</button><button class="btn primary" id="pcok">Salvar</button>`});
@@ -386,7 +386,7 @@ function perfisLote(){
   PL.q = ''; PL.g = ''; PL.sel = new Set();
   const m = modal({title:'Visibilidade das contas em lote', sub:'Substitui os perfis das contas marcadas', icon:'users', wide:true, body:`<div class="form">
     <div class="field"><label>Visível para</label><div style="display:flex;gap:16px;flex-wrap:wrap">${perfisChecks([], 'plp')}</div>
-      <span class="help">Sem nenhum marcado, as contas voltam a ser visíveis para todos os perfis.</span></div>
+      <span class="help">Sem nenhum marcado, as contas ficam sem grupo e só o administrador vê.</span></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="searchbox grow">${ic('search','sm')}<input class="input" type="search" id="plq" placeholder="Filtrar contas por e-mail ou cliente" oninput="LIC.PL.q=this.value;LIC.perfisLoteLista()"></div>
       <select class="input" style="width:auto" onchange="LIC.PL.g=this.value;LIC.perfisLoteLista()"><option value="">Todos os grupos</option><option value="*">Sem grupo</option>${PERFIS_CONTA.map(k => `<option value="${k}">Visível para ${esc(PERFIL[k] || k)}</option>`).join('')}</select>
       <button class="btn sm" onclick="LIC.perfisLoteTodas(true)">Marcar filtradas</button><button class="btn sm" onclick="LIC.perfisLoteTodas(false)">Desmarcar</button></div>
